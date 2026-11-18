@@ -9,12 +9,11 @@ import { fmtBase } from '../lib/cantidades'
 import type { ArticuloCompra } from '../lib/tipos'
 import SelectorSemana from '../components/SelectorSemana'
 import EditorPrecios from '../components/EditorPrecios'
-import { comparar, euros } from '../lib/precios'
-import { TIENDAS, type Tienda } from '../lib/tipos'
+import { euros, totalCompra } from '../lib/precios'
 
 export default function Compra() {
   const [lunes, setLunes] = useSemanaElegida()
-  const { mapaRecetas, mapaIngredientes, miembros, sesion, hogar } = useDatos()
+  const { mapaRecetas, mapaIngredientes, miembros, sesion } = useDatos()
   const { congelados, envases, guardarEnvase, enlaces } = useMenu()
   const comensales = useComensales()
   const semana = useSemana(lunes)
@@ -25,7 +24,6 @@ export default function Compra() {
   const [envaseDe, setEnvaseDe] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [preciosDe, setPreciosDe] = useState<string | null>(null)
-  const [pestana, setPestana] = useState<'todo' | Tienda>('todo')
 
   const necesidades = useMemo(() => {
     const batch = sesionDomingo(lunes, semana.entradas, mapaRecetas, semana.plan?.batch ?? {}, congelados)
@@ -40,9 +38,8 @@ export default function Compra() {
     return firma(guardados) !== firma(necesidades)
   }, [semana.lista, semana.articulos, necesidades])
 
-  const umbral = Number(hogar?.umbral_ahorro ?? 3)
-  const cmp = useMemo(() => comparar(semana.articulos, mapaIngredientes, enlaces, umbral), [semana.articulos, mapaIngredientes, enlaces, umbral])
-  const hayPrecios = cmp.totalMercadona > 0 || cmp.totalDia > 0
+  const precios = useMemo(() => totalCompra(semana.articulos, mapaIngredientes, enlaces), [semana.articulos, mapaIngredientes, enlaces])
+  const hayPrecios = precios.conPrecio > 0
   const nombre = (uid: string | null) => miembros.find((m) => m.id === uid)?.nombre
   const articulos = semana.articulos
   const normales = articulos.filter((a) => !a.es_despensa)
@@ -50,9 +47,9 @@ export default function Compra() {
   const pendientes = normales.filter((a) => !a.comprado).length
   const grupos = useMemo(() => {
     const m = new Map<string, ArticuloCompra[]>()
-    for (const a of normales) if ((!ocultar || !a.comprado) && (pestana === 'todo' || (cmp.asignacion.get(a.id) ?? pestana) === pestana)) m.set(a.categoria, [...(m.get(a.categoria) ?? []), a])
+    for (const a of normales) if (!ocultar || !a.comprado) m.set(a.categoria, [...(m.get(a.categoria) ?? []), a])
     return [...m].sort((a, b) => ordenPasillo(a[0]) - ordenPasillo(b[0]))
-  }, [normales, ocultar, pestana, cmp])
+  }, [normales, ocultar])
 
   async function generar() {
     setGenerando(true)
@@ -80,18 +77,11 @@ export default function Compra() {
             {a.detalle && <span className="detalle">{a.detalle}</span>}
             {a.origen && <span className="origen">{a.origen}</span>}
             {quien && <span className="origen">✓ {quien}</span>}
-            {hayPrecios && a.ingredient_id && (
+            {precios.precios.has(a.id) && (
               <span className="precios-art">
-                {TIENDAS.map((t) => {
-                  const p = cmp.precios.get(a.id)?.[t.valor]
-                  if (!p) return null
-                  const elegida = cmp.asignacion.get(a.id) === t.valor
-                  return (
-                    <span key={t.valor} className={`chip t-${t.valor} ${elegida ? 'elegida' : ''}`}>
-                      {t.nombre} {p.envases > 1 ? `${p.envases}× ` : ''}{euros(p.coste)}
-                    </span>
-                  )
-                })}
+                <span className="chip t-mercadona">
+                  {precios.precios.get(a.id)!.envases > 1 ? `${precios.precios.get(a.id)!.envases}× ` : ''}{euros(precios.precios.get(a.id)!.coste)}
+                </span>
               </span>
             )}
           </span>
@@ -152,34 +142,15 @@ export default function Compra() {
           {hayPrecios ? (
             <section className="tarjeta comparador">
               <div className="totales">
-                <div className={cmp.mejor === 'mercadona' && !cmp.dividir ? 'mejor' : ''}><span>Todo en Mercadona</span><b>{euros(cmp.totalMercadona)}</b></div>
-                <div className={cmp.mejor === 'dia' && !cmp.dividir ? 'mejor' : ''}><span>Todo en Dia</span><b>{euros(cmp.totalDia)}</b></div>
-                <div className={cmp.dividir ? 'mejor' : ''}><span>Mixto</span><b>{cmp.comparables ? euros(cmp.mixtoComparable + (cmp.totalMercadona - cmp.mercadonaComparable) + (cmp.totalDia - cmp.diaComparable)) : '–'}</b></div>
+                <div className="mejor"><span>Total en Mercadona</span><b>{euros(precios.total)}</b></div>
               </div>
-              <p>
-                {cmp.comparables === 0
-                  ? 'Para comparar, enlaza productos de las dos tiendas (💶).'
-                  : cmp.dividir
-                    ? `Dividir la compra ahorra ${euros(cmp.ahorro)} (con ${cmp.comparables} productos con precio en las dos): mira las pestañas de cada tienda.`
-                    : `Dividir solo ahorraría ${euros(cmp.ahorro)} (menos de ${euros(umbral)}): mejor todo en ${cmp.mejor === 'dia' ? 'Dia' : 'Mercadona'}.`}
-              </p>
               <p className="suave">
-                {cmp.comparables} productos comparables · {cmp.sinPrecio} sin precio
-                {cmp.antiguos > 0 && <span className="aviso-mini"> · {cmp.antiguos} precios de hace más de 14 días</span>}
+                {precios.conPrecio} productos con precio{precios.sinPrecio > 0 ? ` · ${precios.sinPrecio} sin precio (toca 💶 para enlazarlos)` : ''}
+                {precios.antiguos > 0 && <span className="aviso-mini"> · {precios.antiguos} precios de hace más de 14 días</span>}
               </p>
-              {cmp.dividir && (
-                <div className="segmentado">
-                  <button className={pestana === 'todo' ? 'on' : ''} onClick={() => setPestana('todo')}>Todo</button>
-                  {TIENDAS.map((t) => (
-                    <button key={t.valor} className={pestana === t.valor ? 'on' : ''} onClick={() => setPestana(t.valor)}>
-                      {t.nombre} ({normales.filter((a) => cmp.asignacion.get(a.id) === t.valor && !a.comprado).length})
-                    </button>
-                  ))}
-                </div>
-              )}
             </section>
           ) : (
-            <p className="suave margen-arriba">💶 Toca el euro de un producto para enlazarlo con Mercadona y Dia y ver cuánto cuesta la compra en cada una.</p>
+            <p className="suave margen-arriba">💶 Toca el euro de un producto para enlazarlo con Mercadona y ver cuánto cuesta la compra.</p>
           )}
           <div className="fila espacio margen-arriba">
             <label className="check">
@@ -199,7 +170,6 @@ export default function Compra() {
             <button className="boton" disabled={!nuevo.trim()}>Añadir</button>
           </form>
 
-          {pestana !== 'todo' && cmp.dividir && <p className="suave">Los productos sin precio en ninguna tienda salen en las dos pestañas.</p>}
           {grupos.map(([cat, xs]) => (
             <section key={cat}>
               <h2 className="pasillo">{cat}</h2>

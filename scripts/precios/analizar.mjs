@@ -1,4 +1,4 @@
-// Conversión de las respuestas de Mercadona y Dia a filas de store_products (sin dependencias, Node 20+)
+// Conversión de las respuestas de Mercadona a filas de store_products (sin dependencias, Node 20+)
 
 const num = (v) => {
   if (v == null || v === '') return null
@@ -59,35 +59,3 @@ export function productosDeCategoria(json, nombreSuperior) {
   visitar(json ?? {}, nombreSuperior ?? json?.name)
   return res
 }
-
-/** Precio de una página de producto de dia.es: JSON-LD, metaetiquetas o JSON incrustado */
-export function precioDesdeHtml(html) {
-  if (!html) return null
-  for (const m of html.matchAll(/<script[^>]*application\/ld\+json[^>]*>([\s\S]*?)<\/script>/gi)) {
-    try {
-      const datos = JSON.parse(m[1].trim())
-      const lista = Array.isArray(datos) ? datos : datos['@graph'] ?? [datos]
-      for (const d of lista) {
-        const tipo = [].concat(d?.['@type'] ?? [])
-        if (!tipo.includes('Product')) continue
-        const ofertas = [].concat(d.offers ?? [])
-        for (const o of ofertas) {
-          const p = num(o.price ?? o.lowPrice)
-          if (p != null && p > 0) return p
-        }
-      }
-    } catch {
-      /* JSON-LD roto: se prueban las otras vías */
-    }
-  }
-  const meta = /<meta[^>]+(?:property|itemprop|name)=["'](?:product:price:amount|og:price:amount|price)["'][^>]*content=["']([\d.,]+)["']/i.exec(html)
-    ?? /<meta[^>]+content=["']([\d.,]+)["'][^>]*(?:property|itemprop|name)=["'](?:product:price:amount|og:price:amount|price)["']/i.exec(html)
-  if (meta) return num(meta[1])
-  const json = /"(?:active_price|activePrice|sellingPrice|price)"\s*:\s*"?(\d+(?:[.,]\d+)?)"?/.exec(html)
-  if (json) return num(json[1])
-  return null
-}
-
-/** ¿La respuesta parece un bloqueo anti-bots? */
-export const pareceBloqueo = (status, html) =>
-  status === 403 || status === 429 || status === 503 || /captcha|cf-chl|access denied|datadome|perimeterx|incapsula/i.test(html ?? '')

@@ -20,7 +20,3 @@ jobs:
           node-version: 22
       - name: Mercadona
         run: node scripts/precios/mercadona.mjs
-      - name: Dia (prototipo; si Dia bloquea, se sigue en modo semimanual)
-        if: always()
-        continue-on-error: true
-        run: node scripts/precios/dia.mjs

@@ -2,11 +2,11 @@ import { useEffect, useState } from 'react'
 import { useMenu } from '../lib/menu'
 import { DIAS_PRECIO_ANTIGUO, euros, precioArticulo } from '../lib/precios'
 import { fmtBase } from '../lib/cantidades'
-import { TIENDAS, type ArticuloCompra, type Ingrediente, type ProductoTienda, type Tienda } from '../lib/tipos'
+import type { ArticuloCompra, Ingrediente, ProductoTienda, Tienda } from '../lib/tipos'
 
 const antiguedad = (iso: string) => Math.floor((Date.now() - new Date(iso).getTime()) / 86400000)
 
-/** Enlazar un ingrediente con un producto de cada tienda y poner precios a mano (modo semimanual) */
+/** Enlazar un ingrediente con su producto de Mercadona y corregir el precio a mano si hace falta */
 export default function EditorPrecios({ articulo, ing, onCerrar }: { articulo: ArticuloCompra; ing: Ingrediente; onCerrar: () => void }) {
   const { enlaces } = useMenu()
   const actuales = enlaces.get(ing.id) ?? {}
@@ -18,9 +18,7 @@ export default function EditorPrecios({ articulo, ing, onCerrar }: { articulo: A
           <button className="enlace" onClick={onCerrar}>Cerrar</button>
         </div>
         {articulo.cantidad != null && <p className="suave">Hace falta: {fmtBase(articulo.cantidad, (articulo.unidad as 'g' | 'ml' | 'ud') ?? ing.unidad_base)}</p>}
-        {TIENDAS.map((t) => (
-          <TiendaProducto key={t.valor} tienda={t.valor} nombreTienda={t.nombre} articulo={articulo} ing={ing} actual={actuales[t.valor]} />
-        ))}
+        <TiendaProducto tienda="mercadona" nombreTienda="Mercadona" articulo={articulo} ing={ing} actual={actuales.mercadona} />
       </div>
     </div>
   )
@@ -112,9 +110,7 @@ function TiendaProducto({ tienda, nombreTienda, articulo, ing, actual }: { tiend
           <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder={`Buscar en ${nombreTienda}…`} />
           {res && res.length === 0 && (
             <p className="suave">
-              {tienda === 'mercadona'
-                ? 'No hay resultados. Si todavía no se ha ejecutado la actualización de precios de Mercadona, añádelo a mano.'
-                : 'No hay productos de Dia con ese nombre. Añádelo a mano (con el enlace de dia.es, si lo tienes, para intentar actualizarlo solo).'}
+              No hay resultados. Si todavía no se ha ejecutado la actualización de precios de Mercadona, añádelo a mano.
             </p>
           )}
           <ul className="resultados-off">
@@ -160,7 +156,6 @@ function ProductoManual({ tienda, ing, onGuardado, onCancelar }: { tienda: Tiend
   const [cantidad, setCantidad] = useState(ing.envase_cantidad?.toString() ?? '')
   const [unidad, setUnidad] = useState<'g' | 'ml' | 'ud'>(ing.unidad_base)
   const [precio, setPrecio] = useState('')
-  const [url, setUrl] = useState('')
   const [error, setError] = useState<string | null>(null)
   const n = (s: string) => Number(s.replace(',', '.'))
   return (
@@ -187,12 +182,6 @@ function ProductoManual({ tienda, ing, onGuardado, onCancelar }: { tienda: Tiend
           <input inputMode="decimal" value={precio} onChange={(e) => setPrecio(e.target.value)} placeholder="2,35" />
         </label>
       </div>
-      {tienda === 'dia' && (
-        <label>
-          Enlace de dia.es (opcional)
-          <input type="url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://www.dia.es/…" />
-        </label>
-      )}
       {error && <p className="error">{error}</p>}
       <div className="fila">
         <button
@@ -202,7 +191,7 @@ function ProductoManual({ tienda, ing, onGuardado, onCancelar }: { tienda: Tiend
             try {
               const id = await guardarProducto({
                 tienda, nombre: nombre.trim(), envase_cantidad: n(cantidad) > 0 ? n(cantidad) : null, envase_unidad: unidad, precio: n(precio),
-                url: url.trim() || null, envase_texto: n(cantidad) > 0 ? fmtBase(n(cantidad), unidad) : null,
+                url: null, envase_texto: n(cantidad) > 0 ? fmtBase(n(cantidad), unidad) : null,
               })
               await onGuardado(id)
             } catch (e: any) {

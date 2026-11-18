@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { envaseMercadona, pareceBloqueo, precioDesdeHtml, productosDeCategoria } from './analizar.mjs'
+import { envaseMercadona, productosDeCategoria } from './analizar.mjs'
 
 describe('Mercadona', () => {
   it('convierte el formato del envase', () => {
@@ -16,20 +16,5 @@ describe('Mercadona', () => {
     const ps = productosDeCategoria(json, 'Aceite, especias y salsas')
     expect(ps).toHaveLength(1)
     expect(ps[0]).toMatchObject({ tienda: 'mercadona', id_externo: '4241', precio: 19.95, envase_cantidad: 5000, envase_unidad: 'ml', categoria: 'Aceite, especias y salsas', precio_referencia: 3.99 })
-  })
-})
-
-describe('Dia', () => {
-  it('saca el precio del JSON-LD', () => {
-    const html = '<script type="application/ld+json">{"@context":"https://schema.org","@type":"Product","name":"Leche","offers":{"@type":"Offer","price":"0.95","priceCurrency":"EUR"}}</script>'
-    expect(precioDesdeHtml(html)).toBe(0.95)
-  })
-  it('o de las metaetiquetas', () => {
-    expect(precioDesdeHtml('<meta property="product:price:amount" content="2,49">')).toBe(2.49)
-  })
-  it('detecta bloqueos', () => {
-    expect(pareceBloqueo(403, '')).toBe(true)
-    expect(pareceBloqueo(200, '<div id="captcha">')).toBe(true)
-    expect(pareceBloqueo(200, '<html>ok</html>')).toBe(false)
   })
 })

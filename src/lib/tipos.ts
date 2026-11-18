@@ -217,11 +217,8 @@ export const racionesHogar = (c: Comensal[]) => (c.length ? Math.round(c.reduce(
 // =========================================================
 // Precios
 // =========================================================
-export type Tienda = 'mercadona' | 'dia'
-export const TIENDAS: { valor: Tienda; nombre: string; color: string }[] = [
-  { valor: 'mercadona', nombre: 'Mercadona', color: '#0b7a3e' },
-  { valor: 'dia', nombre: 'Dia', color: '#d71920' },
-]
+/** Solo Mercadona (Dia se descartó). La columna `tienda` se mantiene en la base de datos. */
+export type Tienda = 'mercadona'
 
 export interface ProductoTienda {
   id: string
