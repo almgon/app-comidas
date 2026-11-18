@@ -84,6 +84,7 @@ create policy "ver historial" on public.price_history for select
   using (exists (select 1 from public.store_products p where p.id = store_product_id and (p.household_id is null or p.household_id = public.mi_hogar())));
 
 grant select, insert, update, delete on all tables in schema public to authenticated;
+grant select, insert, update, delete on public.store_products, public.price_history to service_role;
 
 -- Tiempo real de los enlaces (el catálogo de Mercadona es grande y cambia una vez por semana: no hace falta)
 do $$

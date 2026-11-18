@@ -71,7 +71,7 @@ Primeros pasos en la app:
 
 ## Precios de Mercadona y Dia (fase 2b)
 
-1. **Supabase → SQL Editor → New query**: pega [`supabase/migrations/005_precios.sql`](supabase/migrations/005_precios.sql) y pulsa **Run** (se puede repetir sin problema).
+1. **Supabase → SQL Editor → New query**: pega [`supabase/migrations/005_precios.sql`](supabase/migrations/005_precios.sql) y pulsa **Run** (se puede repetir sin problema). Después, igual con [`supabase/migrations/006_permisos_action.sql`](supabase/migrations/006_permisos_action.sql) (permisos para el Action).
 2. **Copia la clave de servicio de Supabase**: **Project Settings → API Keys** → la clave **`service_role`** (o la *secret key*, `sb_secret_…`). ⚠️ Esta clave es secreta: solo se pega en GitHub, nunca en Vercel ni en la app.
 3. **GitHub** (con la cuenta `almgon`): abre el repositorio `app-comidas` → **Settings → Secrets and variables → Actions → New repository secret** y crea dos:
    | Name | Secret |
