@@ -29,6 +29,7 @@ async function comprobarUrl(raw: string): Promise<URL> {
   if (u.protocol !== 'https:' && u.protocol !== 'http:') throw new ErrorHttp(400, 'Solo se admiten enlaces http(s)')
   const host = u.hostname
   if (host === 'localhost' || host.endsWith('.local') || host.endsWith('.internal')) throw new ErrorHttp(400, 'Enlace no permitido')
+  if (process.env.IMPORTAR_SIN_DNS === '1') return u // solo para pruebas locales detrás de un proxy
   const ips = isIP(host) ? [host] : (await lookup(host, { all: true }).catch(() => [])).map((x) => x.address)
   if (!ips.length) throw new ErrorHttp(400, 'No se encuentra esa web')
   if (ips.some(ipPrivada)) throw new ErrorHttp(400, 'Enlace no permitido')

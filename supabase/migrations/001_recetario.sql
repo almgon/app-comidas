@@ -228,3 +228,7 @@ create policy "cambiar fotos del hogar" on storage.objects for update to authent
   using (bucket_id = 'fotos' and (storage.foldername(name))[1] = public.mi_hogar()::text);
 create policy "borrar fotos del hogar" on storage.objects for delete to authenticated
   using (bucket_id = 'fotos' and (storage.foldername(name))[1] = public.mi_hogar()::text);
+
+-- Permisos de la API (las políticas RLS de arriba limitan qué filas ve cada uno)
+grant select, insert, update, delete on all tables in schema public to authenticated;
+grant execute on function public.crear_hogar(text), public.unirse_hogar(text), public.mi_hogar() to authenticated;
