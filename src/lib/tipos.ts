@@ -27,6 +27,7 @@ export interface Hogar {
   nombre: string
   codigo_invitacion: string
   desayunos_iniciados?: boolean
+  umbral_ahorro?: number
 }
 
 export interface Perfil {
@@ -205,3 +206,31 @@ export function comensalesDe(miembros: Perfil[]): Comensal[] {
 }
 
 export const racionesHogar = (c: Comensal[]) => (c.length ? Math.round(c.reduce((s, x) => s + x.factor, 0) * 100) / 100 : 2)
+
+// =========================================================
+// Precios
+// =========================================================
+export type Tienda = 'mercadona' | 'dia'
+export const TIENDAS: { valor: Tienda; nombre: string; color: string }[] = [
+  { valor: 'mercadona', nombre: 'Mercadona', color: '#0b7a3e' },
+  { valor: 'dia', nombre: 'Dia', color: '#d71920' },
+]
+
+export interface ProductoTienda {
+  id: string
+  household_id: string | null
+  tienda: Tienda
+  id_externo: string
+  nombre: string
+  categoria: string | null
+  envase_cantidad: number | null
+  envase_unidad: 'g' | 'ml' | 'ud'
+  envase_texto: string | null
+  precio: number | null
+  precio_referencia: number | null
+  formato_referencia: string | null
+  url: string | null
+  foto_url: string | null
+  origen: 'auto' | 'manual'
+  actualizado_en: string
+}

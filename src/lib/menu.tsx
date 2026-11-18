@@ -2,7 +2,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { supabase } from './supabase'
 import { useDatos } from './datos'
-import type { ArticuloCompra, Congelado, EntradaPlan, Envase, EstadoBatch, LineaDesayuno, ListaCompra, Momento, PlanSemana } from './tipos'
+import type { ArticuloCompra, Congelado, EntradaPlan, Envase, EstadoBatch, LineaDesayuno, ListaCompra, Momento, PlanSemana, ProductoTienda, Tienda } from './tipos'
 import { comensalesDe } from './tipos'
 import type { Necesidad } from './compra'
 import { claveArticulo } from './compra'
@@ -46,6 +46,11 @@ interface DatosMenu {
   guardarCongelado: (c: Partial<Congelado> & { nombre: string }) => Promise<void>
   borrarCongelado: (id: string) => Promise<void>
   guardarEnvase: (ingredientId: string, e: Envase | null) => Promise<void>
+  /** producto enlazado a cada ingrediente en cada tienda */
+  enlaces: Map<string, Partial<Record<Tienda, ProductoTienda>>>
+  enlazar: (ingredientId: string, tienda: Tienda, productoId: string | null) => Promise<void>
+  guardarProducto: (p: Partial<ProductoTienda> & { tienda: Tienda; nombre: string }) => Promise<string>
+  buscarProductos: (tienda: Tienda, q: string) => Promise<ProductoTienda[]>
   recargarMenu: () => Promise<void>
 }
 
@@ -57,6 +62,9 @@ export const useMenu = () => {
 }
 
 const aCongelado = (c: any): Congelado => ({ ...c, raciones: Number(c.raciones) })
+export const aProducto = (p: any): ProductoTienda => ({
+  ...p, envase_cantidad: num(p.envase_cantidad), precio: num(p.precio), precio_referencia: num(p.precio_referencia),
+})
 
 export function MenuProvider({ children }: { children: ReactNode }) {
   const { hogar, miembros, ingredientes, recargar: recargarDatos } = useDatos()
@@ -66,6 +74,7 @@ export function MenuProvider({ children }: { children: ReactNode }) {
   const [desayunos, setDesayunos] = useState<LineaDesayuno[]>(cache?.desayunos ?? [])
   const [congelados, setCongelados] = useState<Congelado[]>(cache?.congelados ?? [])
   const [envasesL, setEnvasesL] = useState<{ ingredient_id: string; cantidad: number; nombre: string }[]>(cache?.envases ?? [])
+  const [enlacesL, setEnlacesL] = useState<{ ingredient_id: string; tienda: Tienda; producto: ProductoTienda }[]>(cache?.enlaces ?? [])
 
   const recargarMenu = useCallback(async () => {
     if (!hogarId) return
@@ -83,7 +92,11 @@ export function MenuProvider({ children }: { children: ReactNode }) {
       setDesayunos(datos.desayunos)
       setCongelados(datos.congelados)
       setEnvasesL(datos.envases)
-      localStorage.setItem(clave, JSON.stringify(datos))
+      // Precios (migración 005): si aún no existe la tabla, se sigue sin precios
+      const ip = await supabase.from('ingredient_products').select('ingredient_id, tienda, store_products(*)')
+      const enlaces = ip.error ? [] : (ip.data as any[]).filter((x) => x.store_products).map((x) => ({ ingredient_id: x.ingredient_id, tienda: x.tienda, producto: aProducto(x.store_products) }))
+      setEnlacesL(enlaces)
+      localStorage.setItem(clave, JSON.stringify({ ...datos, enlaces }))
     } catch (err) {
       console.warn('No se pudo cargar el menú (¿sin conexión o falta la migración 004?)', err)
     }
@@ -147,6 +160,7 @@ export function MenuProvider({ children }: { children: ReactNode }) {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'desayunos' }, programar)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'freezer_items' }, programar)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'envases_hogar' }, programar)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ingredient_products' }, programar)
       .subscribe()
     const alVolver = () => document.visibilityState === 'visible' && recargarMenu()
     document.addEventListener('visibilitychange', alVolver)
@@ -199,10 +213,45 @@ export function MenuProvider({ children }: { children: ReactNode }) {
     [recargarMenu],
   )
 
+  const enlazar = useCallback(
+    async (ingredientId: string, tienda: Tienda, productoId: string | null) => {
+      if (productoId) chk(await supabase.from('ingredient_products').upsert({ ingredient_id: ingredientId, tienda, store_product_id: productoId }, { onConflict: 'household_id,ingredient_id,tienda' }))
+      else chk(await supabase.from('ingredient_products').delete().eq('ingredient_id', ingredientId).eq('tienda', tienda))
+      await recargarMenu()
+    },
+    [recargarMenu],
+  )
+  const guardarProducto = useCallback(
+    async (p: Partial<ProductoTienda> & { tienda: Tienda; nombre: string }) => {
+      const { id, ...campos } = p
+      const fila = { ...campos, actualizado_en: new Date().toISOString() }
+      if (id) {
+        chk(await supabase.from('store_products').update({ ...fila, origen: 'manual' }).eq('id', id))
+        await recargarMenu()
+        return id
+      }
+      const r = chk(
+        await supabase.from('store_products').insert({ ...fila, household_id: hogarId, origen: 'manual', id_externo: `m-${crypto.randomUUID()}` }).select('id').single(),
+      ) as any
+      return r.id as string
+    },
+    [hogarId, recargarMenu],
+  )
+  const buscarProductos = useCallback(async (tienda: Tienda, q: string) => {
+    const r = await supabase.rpc('buscar_productos', { p_tienda: tienda, p_q: q })
+    if (r.error) throw new Error(/function|relation|schema cache/i.test(r.error.message) ? 'Falta ejecutar la migración 005 en Supabase.' : r.error.message)
+    return (r.data as any[]).map(aProducto)
+  }, [])
+
   const envases = useMemo(() => new Map(envasesL.map((e) => [e.ingredient_id, { cantidad: e.cantidad, nombre: e.nombre }])), [envasesL])
+  const enlaces = useMemo(() => {
+    const m = new Map<string, Partial<Record<Tienda, ProductoTienda>>>()
+    for (const e of enlacesL) m.set(e.ingredient_id, { ...(m.get(e.ingredient_id) ?? {}), [e.tienda]: e.producto })
+    return m
+  }, [enlacesL])
 
   return (
-    <Ctx.Provider value={{ desayunos, congelados, envases, guardarDesayuno, borrarDesayuno, guardarCongelado, borrarCongelado, guardarEnvase, recargarMenu }}>
+    <Ctx.Provider value={{ desayunos, congelados, envases, guardarDesayuno, borrarDesayuno, guardarCongelado, borrarCongelado, guardarEnvase, enlaces, enlazar, guardarProducto, buscarProductos, recargarMenu }}>
       {children}
     </Ctx.Provider>
   )
