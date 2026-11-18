@@ -1,0 +1,26 @@
+name: Precios semanales
+
+on:
+  schedule:
+    - cron: '0 4 * * 5' # viernes a las 5:00 (hora de Madrid en invierno), antes de la compra del fin de semana
+  workflow_dispatch: {}
+
+jobs:
+  precios:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      CODIGO_POSTAL: '28032'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Mercadona
+        run: node scripts/precios/mercadona.mjs
+      - name: Dia (prototipo; si Dia bloquea, se sigue en modo semimanual)
+        if: always()
+        continue-on-error: true
+        run: node scripts/precios/dia.mjs

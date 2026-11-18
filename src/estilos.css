@@ -272,3 +272,19 @@ input.mini-num { width: 70px; padding: .35rem .4rem; }
 .editor-envase input:not(.mini-num) { flex: 1; min-width: 100px; }
 .compra form input { flex: 1; }
 .plato-desayuno { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; }
+
+/* Precios */
+.comparador .totales { display: grid; grid-template-columns: repeat(3, 1fr); gap: .4rem; text-align: center; }
+.comparador .totales div { display: flex; flex-direction: column; border: 1px solid var(--borde); border-radius: 10px; padding: .4rem .2rem; }
+.comparador .totales span { font-size: .72rem; color: var(--suave); }
+.comparador .totales .mejor { border-color: var(--verde); background: var(--verde-claro); }
+.comparador p { margin: .5rem 0 .2rem; }
+.precios-art { display: flex; flex-wrap: wrap; gap: .25rem; margin-top: .15rem; }
+.chip.t-mercadona.elegida { background: #e0f2e8; border-color: #0b7a3e; color: #0b5a2e; }
+.chip.t-dia.elegida { background: #fde3e3; border-color: #d71920; color: #9a1016; }
+@media (prefers-color-scheme: dark) { .chip.t-mercadona.elegida, .chip.t-dia.elegida { background: var(--fondo); color: var(--texto); } }
+.tienda-producto { border-top: 1px solid var(--borde); padding-top: .6rem; display: flex; flex-direction: column; gap: .4rem; }
+.tienda-producto h3 { margin: 0; font-size: 1rem; }
+.tienda-producto.t-mercadona h3 { color: #0b7a3e; }
+.tienda-producto.t-dia h3 { color: #d71920; }
+.tienda-producto p { margin: 0; }

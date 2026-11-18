@@ -68,3 +68,17 @@ Primeros pasos en la app:
 - **Menú → ✨ Proponer semana**. Fija (📌) lo que quieras mantener y vuelve a proponer; 🎲 cambia un solo plato; ✏️ para elegirlo a mano o marcar «comemos fuera».
 - **🍲 Domingo**: lo que hay que cocinar, cuánto y qué va a la nevera o al congelador. Al terminar, lo que sobra se guarda en **❄️ Congelador**.
 - **🛒 Compra**: «Crear lista desde el menú». Lo que marca uno lo ve el otro al momento.
+
+## Precios de Mercadona y Dia (fase 2b)
+
+1. **Supabase → SQL Editor → New query**: pega [`supabase/migrations/005_precios.sql`](supabase/migrations/005_precios.sql) y pulsa **Run** (se puede repetir sin problema).
+2. **Copia la clave de servicio de Supabase**: **Project Settings → API Keys** → la clave **`service_role`** (o la *secret key*, `sb_secret_…`). ⚠️ Esta clave es secreta: solo se pega en GitHub, nunca en Vercel ni en la app.
+3. **GitHub** (con la cuenta `almgon`): abre el repositorio `app-comidas` → **Settings → Secrets and variables → Actions → New repository secret** y crea dos:
+   | Name | Secret |
+   |---|---|
+   | `SUPABASE_URL` | la Project URL de Supabase (`https://….supabase.co`) |
+   | `SUPABASE_SERVICE_ROLE_KEY` | la clave `service_role` del paso 2 |
+4. **Primera actualización**: pestaña **Actions** → **Precios semanales** → **Run workflow** → **Run workflow**. Tarda unos 3-5 minutos. Si sale en verde, ya tienes los precios de Mercadona (almacén del código postal 28032). Después se ejecuta sola cada viernes de madrugada.
+5. **En la app** (pestaña Compra): toca 💶 en cada producto para enlazarlo con su producto de Mercadona (buscador) y de Dia.
+   - Dia no tiene catálogo abierto: el producto se añade a mano una vez (nombre, envase y precio) y, si pegas el enlace de dia.es, el Action intenta actualizar el precio cada semana. Si Dia lo bloquea, sigue funcionando en modo semimanual: corriges el precio cuando cambie.
+   - Con productos de las dos tiendas, la lista muestra el total en cada una y el mixto. Si dividir la compra ahorra 3 € o más (cambia el umbral en Ajustes), aparecen las pestañas Mercadona / Dia.

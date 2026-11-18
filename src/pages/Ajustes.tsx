@@ -5,7 +5,8 @@ import { useDatos } from '../lib/datos'
 import { fmt } from '../lib/nutricion'
 
 export default function Ajustes() {
-  const { perfil, hogar, miembros, sesion, guardarPerfil, renombrarHogar, recetas } = useDatos()
+  const { perfil, hogar, miembros, sesion, guardarPerfil, renombrarHogar, recetas, recargar } = useDatos()
+  const [umbral, setUmbral] = useState(String(hogar?.umbral_ahorro ?? 3).replace('.', ','))
   const [nombre, setNombre] = useState(perfil?.nombre ?? '')
   const [peso, setPeso] = useState(perfil?.peso_kg?.toString() ?? '')
   const [factor, setFactor] = useState(perfil?.factor_racion?.toString() ?? '1')
@@ -21,6 +22,12 @@ export default function Ajustes() {
       factor_racion: Number(factor.replace(',', '.')) || 1,
     })
     if (hogar && nombreHogar.trim() && nombreHogar !== hogar.nombre) await renombrarHogar(nombreHogar.trim())
+    const u = Number(umbral.replace(',', '.'))
+    if (hogar && Number.isFinite(u) && u >= 0 && u !== Number(hogar.umbral_ahorro ?? 3)) {
+      const r = await supabase.from('households').update({ umbral_ahorro: u }).eq('id', hogar.id)
+      if (r.error) setOk('Falta la migración 005 para guardar el umbral')
+      await recargar()
+    }
     setOk('Guardado')
     setTimeout(() => setOk(null), 2000)
   }
@@ -74,6 +81,10 @@ export default function Ajustes() {
             {copiado ? 'Copiado' : 'Copiar'}
           </button>
         </div>
+        <label>
+          Dividir la compra entre Mercadona y Dia si se ahorran al menos (€)
+          <input inputMode="decimal" value={umbral} onChange={(e) => setUmbral(e.target.value)} />
+        </label>
         <p className="suave">{recetas.length} recetas compartidas. Los cambios se ven al instante en los dos móviles.</p>
       </section>
 
