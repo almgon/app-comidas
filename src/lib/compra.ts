@@ -4,7 +4,7 @@ import type { ItemBatch } from './batch'
 import { aUnidadBase, cantidadCompra, enEnvases, fmtBase } from './cantidades'
 import type { Comensal, EntradaPlan, Envase, Ingrediente, Receta } from './tipos'
 
-/** Orden de los pasillos (más o menos el recorrido de Mercadona y Dia) */
+/** Orden de los pasillos (más o menos el recorrido de Mercadona) */
 export const PASILLOS = [
   'Fruta', 'Verdura', 'Panadería', 'Carne', 'Charcutería', 'Pescado', 'Huevos', 'Lácteos', 'Refrigerados',
   'Desayuno', 'Pasta y arroz', 'Legumbres', 'Conservas', 'Frutos secos', 'Despensa', 'Congelados', 'Bebidas', 'Otros',

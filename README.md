@@ -6,7 +6,7 @@ PWA para planificar las comidas de la semana entre dos personas. **Fase 1: recet
 - Desayunos fijos (L-V y fin de semana) con cantidades por persona.
 - Domingo de cocina (bases + platos, nevera o congelador) e inventario del congelador.
 - Lista de la compra compartida en tiempo real, agrupada, en envases y por pasillo.
-- Comparador Mercadona / Dia: precios de Mercadona cada semana con un GitHub Action (`scripts/precios/`), Dia en prototipo o semimanual, totales por tienda y lista dividida si el ahorro llega al umbral.
+- Precios de Mercadona: se actualizan cada semana con un GitHub Action (`scripts/precios/`) y la lista muestra el coste de cada producto y el total.
 
 - Recetas propias con foto, raciones, tiempos, ingredientes, pasos, etiquetas, notas, favorita y valoración.
 - Clasificación para el planificador: comida/cena, grupo proteico principal, cena rápida (≤ 30 min), congelable y días en nevera.

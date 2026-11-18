@@ -81,7 +81,7 @@ export function MenuProvider({ children }: { children: ReactNode }) {
       setEnvasesL(datos.envases)
       // Precios (migración 005): si aún no existe la tabla, se sigue sin precios
       const ip = await supabase.from('ingredient_products').select('ingredient_id, tienda, store_products(*)')
-      const enlaces = ip.error ? [] : (ip.data as any[]).filter((x) => x.store_products).map((x) => ({ ingredient_id: x.ingredient_id, tienda: x.tienda, producto: aProducto(x.store_products) }))
+      const enlaces = ip.error ? [] : (ip.data as any[]).filter((x) => x.store_products && x.tienda === 'mercadona').map((x) => ({ ingredient_id: x.ingredient_id, tienda: x.tienda, producto: aProducto(x.store_products) }))
       setEnlacesL(enlaces)
       localStorage.setItem(clave, JSON.stringify({ ...datos, enlaces }))
     } catch (err) {
