@@ -60,6 +60,7 @@ function aIngrediente(i: any): Ingrediente {
     proteina_100: num(i.proteina_100),
     hidratos_100: num(i.hidratos_100),
     grasa_100: num(i.grasa_100),
+    envase_cantidad: num(i.envase_cantidad),
   }
 }
 

@@ -57,6 +57,7 @@ export default function Recetas() {
       <header className="cabecera">
         <h1>Recetas</h1>
         <span className="suave">{filtradas.length} de {recetas.length}</span>
+        <Link className="boton primario" to="/receta/nueva">+ Nueva</Link>
       </header>
       <div className="buscador">
         <input type="search" placeholder="Buscar por nombre, ingrediente o etiqueta…" value={q} onChange={(e) => setQ(e.target.value)} />
