@@ -246,9 +246,11 @@ export function DatosProvider({ children }: { children: ReactNode }) {
     async (i: Partial<Ingrediente> & { nombre: string }) => {
       const { id, ...campos } = i
       const fila = { ...campos, household_id: hogarId }
-      const r = id
-        ? chk(await supabase.from('ingredients').update(fila).eq('id', id).select('*').single())
-        : chk(await supabase.from('ingredients').insert(fila).select('*').single())
+      const resp = id
+        ? await supabase.from('ingredients').update(fila).eq('id', id).select('*').single()
+        : await supabase.from('ingredients').insert(fila).select('*').single()
+      if (resp.error?.code === '23505') throw new Error(`Ya existe un ingrediente llamado «${i.nombre}» (o ese mismo producto)`)
+      const r = chk(resp)
       await recargar()
       return aIngrediente(r)
     },

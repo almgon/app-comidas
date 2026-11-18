@@ -177,3 +177,8 @@ code.bloque { display: block; padding: .6rem; background: var(--fondo); border-r
   .chip[class*='g-'], .chip.base { background: var(--fondo); border-color: var(--borde); color: var(--texto); }
 }
 .chip.on[class*='g-'] { background: var(--verde); color: white; border-color: var(--verde); }
+.buscar-off { border-bottom: 1px dashed var(--borde); padding-bottom: .6rem; }
+.resultados-off { list-style: none; padding: 0; margin: .4rem 0 0; max-height: 320px; overflow-y: auto; }
+.resultados-off button { width: 100%; text-align: left; display: flex; flex-direction: column; gap: .15rem; background: var(--tarjeta); border: 1px solid var(--borde); border-radius: 10px; padding: .5rem .6rem; margin-bottom: .35rem; cursor: pointer; color: var(--texto); }
+.resultados-off button:disabled { opacity: .55; }
+.resultados-off .chip { align-self: flex-start; }

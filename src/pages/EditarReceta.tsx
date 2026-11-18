@@ -5,6 +5,7 @@ import { useDatos } from '../lib/datos'
 import { mejorSugerencia, sugerencias } from '../lib/emparejar'
 import { subirFoto } from '../lib/fotos'
 import { fmt, gramosDe, nutricionPorRacion } from '../lib/nutricion'
+import NuevoIngrediente from '../components/NuevoIngrediente'
 import {
   GRUPOS_PROTEICOS,
   TIPOS_COMIDA,
@@ -485,6 +486,10 @@ export default function EditarReceta() {
                       vincular(fila.key, 'ingrediente', nuevo.id)
                       setCreandoEn(null)
                     }}
+                    onUsarExistente={(idExistente) => {
+                      vincular(fila.key, 'ingrediente', idExistente)
+                      setCreandoEn(null)
+                    }}
                   />
                 )}
               </div>
@@ -522,94 +527,5 @@ export default function EditarReceta() {
         <button className="boton primario" disabled={guardando || subiendo}>{guardando ? 'Guardando…' : 'Guardar receta'}</button>
       </div>
     </form>
-  )
-}
-
-const CATEGORIAS = ['Carne', 'Pescado', 'Huevos', 'Legumbres', 'Verdura', 'Fruta', 'Lácteos', 'Pasta y arroz', 'Panadería', 'Conservas', 'Congelados', 'Charcutería', 'Frutos secos', 'Despensa', 'Desayuno', 'Refrigerados', 'Bebidas', 'Otros']
-
-export function NuevoIngrediente({
-  nombre: nombreInicial,
-  inicial,
-  onGuardar,
-  onCancelar,
-}: {
-  nombre?: string
-  inicial?: Ingrediente
-  onGuardar: (i: Partial<Ingrediente> & { nombre: string }) => Promise<void>
-  onCancelar: () => void
-}) {
-  const [nombre, setNombre] = useState(inicial?.nombre ?? nombreInicial ?? '')
-  const [categoria, setCategoria] = useState(inicial?.categoria ?? 'Otros')
-  const [unidad, setUnidad] = useState<'g' | 'ml' | 'ud'>(inicial?.unidad_base ?? 'g')
-  const [peso, setPeso] = useState(str(inicial?.peso_unidad_g))
-  const [prot, setProt] = useState(str(inicial?.proteina_100))
-  const [kcal, setKcal] = useState(str(inicial?.kcal_100))
-  const [desp, setDesp] = useState(inicial?.es_despensa ?? false)
-  const [error, setError] = useState<string | null>(null)
-  return (
-    <div className="nuevo-ingrediente">
-      <div className="rejilla-2">
-        <label>
-          Nombre
-          <input value={nombre} onChange={(e) => setNombre(e.target.value)} />
-        </label>
-        <label>
-          Sección
-          <select value={categoria} onChange={(e) => setCategoria(e.target.value)}>
-            {CATEGORIAS.map((c) => <option key={c}>{c}</option>)}
-          </select>
-        </label>
-        <label>
-          Proteína (g/100)
-          <input inputMode="decimal" value={prot} onChange={(e) => setProt(e.target.value)} />
-        </label>
-        <label>
-          Kcal (/100)
-          <input inputMode="decimal" value={kcal} onChange={(e) => setKcal(e.target.value)} />
-        </label>
-        <label>
-          Se mide en
-          <select value={unidad} onChange={(e) => setUnidad(e.target.value as 'g' | 'ml' | 'ud')}>
-            <option value="g">gramos</option>
-            <option value="ml">mililitros</option>
-            <option value="ud">unidades</option>
-          </select>
-        </label>
-        <label>
-          Peso de 1 unidad (g)
-          <input inputMode="decimal" value={peso} onChange={(e) => setPeso(e.target.value)} placeholder="ej. huevo 60" />
-        </label>
-      </div>
-      <label className="check">
-        <input type="checkbox" checked={desp} onChange={(e) => setDesp(e.target.checked)} /> Siempre en casa (despensa)
-      </label>
-      {error && <p className="error">{error}</p>}
-      <div className="fila">
-        <button type="button" className="boton" onClick={onCancelar}>Cancelar</button>
-        <button
-          type="button"
-          className="boton primario"
-          onClick={async () => {
-            if (!nombre.trim()) return setError('Falta el nombre')
-            try {
-              await onGuardar({
-                ...(inicial ? { id: inicial.id } : {}),
-                nombre: nombre.trim(),
-                categoria,
-                unidad_base: unidad,
-                peso_unidad_g: numero(peso),
-                proteina_100: numero(prot),
-                kcal_100: numero(kcal),
-                es_despensa: desp,
-              })
-            } catch (e: any) {
-              setError(e.message ?? String(e))
-            }
-          }}
-        >
-          Guardar ingrediente
-        </button>
-      </div>
-    </div>
   )
 }

@@ -14,6 +14,7 @@ Necesitas un ordenador para estos pasos (una sola vez). Después la app se usa d
 3. Crear las tablas: menú de la izquierda **SQL Editor** → **New query**.
    - Abre en GitHub el archivo [`supabase/migrations/001_recetario.sql`](supabase/migrations/001_recetario.sql), pulsa el botón de copiar, pégalo y pulsa **Run**. Debe decir *Success*.
    - Repite con [`supabase/migrations/002_catalogo_ingredientes.sql`](supabase/migrations/002_catalogo_ingredientes.sql) (el catálogo de ingredientes).
+   - Y con [`supabase/migrations/003_mas_alimentos.sql`](supabase/migrations/003_mas_alimentos.sql) (más alimentos y protección contra duplicados).
 4. Login: menú **Authentication** → **Sign In / Providers** → **Email**.
    - Recomendado: desactiva **Confirm email** y guarda. Así podéis entrar nada más crear la cuenta (si lo dejas activado, el enlace del email se abre en Safari y luego hay que volver a la app).
 5. Copia las claves: menú **Project Settings** → **API Keys** (o **Data API**):

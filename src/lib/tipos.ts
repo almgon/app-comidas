@@ -48,6 +48,7 @@ export interface Ingrediente {
   hidratos_100: number | null
   grasa_100: number | null
   es_despensa: boolean
+  codigo_off?: string | null
 }
 
 export interface LineaIngrediente {

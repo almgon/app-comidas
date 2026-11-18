@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { normalizar } from '../../shared/parser.js'
 import { useDatos } from '../lib/datos'
 import { fmt } from '../lib/nutricion'
-import { NuevoIngrediente } from './EditarReceta'
+import NuevoIngrediente from '../components/NuevoIngrediente'
 
 export default function Ingredientes() {
   const nav = useNavigate()
