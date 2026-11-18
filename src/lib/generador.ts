@@ -26,8 +26,8 @@ export interface ContextoMenu {
   /** proteína por ración de cada receta (null si no se sabe) */
   proteina: Map<string, number | null>
   comensales: Comensal[]
-  /** proteína del desayuno por comensal: [entre semana, fin de semana] */
-  proteinaDesayuno: Map<string, [number, number]>
+  /** uso interno: proteína del desayuno por comensal y día (la calcula el generador) */
+  proteinaDesayuno?: Map<string, number[]>
   /** congelador disponible (raciones que quedan, sin contar lo ya reservado por las entradas fijas) */
   congelados: Congelado[]
   raciones: number
@@ -37,7 +37,9 @@ export interface ContextoMenu {
 // Reglas duras
 // ---------------------------------------------------------
 export const esPlato = (r: Receta) => !r.es_base && r.tipo_comida !== 'desayuno'
-export const sirvePara = (r: Receta, m: Momento) => r.tipo_comida === 'ambas' || r.tipo_comida === m
+export const esDesayuno = (r: Receta) => !r.es_base && r.tipo_comida === 'desayuno'
+export const sirvePara = (r: Receta, m: Momento) => (m === 'desayuno' ? r.tipo_comida === 'desayuno' : r.tipo_comida === 'ambas' || r.tipo_comida === m)
+export const MOMENTOS_DIA: Momento[] = ['desayuno', 'comida', 'cena']
 export const esCenaEntreSemana = (h: Pick<Hueco, 'dia' | 'momento'>) => h.momento === 'cena' && h.dia <= 4
 /** Lunes y martes a mediodía se come lo cocinado el domingo */
 export const esComidaDeBatch = (h: Pick<Hueco, 'dia' | 'momento'>) => h.momento === 'comida' && h.dia <= 1
@@ -55,8 +57,10 @@ export function huecos(lunes: string): Hueco[] {
 export function opcionesHueco(h: Hueco, ctx: ContextoMenu, disponibleCongelado: Map<string, number>): Opcion[] {
   const res: Opcion[] = []
   for (const r of ctx.recetas) {
-    if (!esPlato(r) || !sirvePara(r, h.momento)) continue
-    if (esComidaDeBatch(h)) {
+    if (r.es_base || !sirvePara(r, h.momento)) continue
+    if (h.momento === 'desayuno') {
+      res.push({ recipe_id: r.id, origen: 'fresco', freezer_item_id: null })
+    } else if (esComidaDeBatch(h)) {
       if (sirveDeBatch(r, h.dia)) res.push({ recipe_id: r.id, origen: 'batch', freezer_item_id: null })
     } else if (esCenaEntreSemana(h)) {
       if (aptaCenaRapida(r)) res.push({ recipe_id: r.id, origen: 'fresco', freezer_item_id: null })
@@ -98,14 +102,15 @@ export interface Indicadores {
 
 type EntradaMin = Pick<EntradaPlan, 'fecha' | 'momento' | 'recipe_id' | 'origen'>
 
-export function indicadores(entradas: EntradaMin[], ctx: Pick<ContextoMenu, 'lunes' | 'recetas' | 'proteina' | 'comensales' | 'proteinaDesayuno'>, estimarDesconocida = 0): Indicadores {
+/** Frecuencias AESAN con comida y cena; la proteína del día cuenta también el desayuno */
+export function indicadores(entradas: EntradaMin[], ctx: Pick<ContextoMenu, 'lunes' | 'recetas' | 'proteina' | 'comensales'>, estimarDesconocida = 0): Indicadores {
   const recetas = new Map(ctx.recetas.map((r) => [r.id, r]))
   const fechas = fechasSemana(ctx.lunes)
   const ind: Indicadores = {
     huecosPlanificados: 0, escala: 0, legumbre: 0, pescado: 0, pescadoAzul: 0, carne: 0, carneRoja: 0, huevo: 0, vegetal: 0, sinGrupo: 0,
     proteinaDia: new Map(), sinProteina: 0,
   }
-  const libres = entradas.filter((e) => e.origen === 'libre').length
+  const libres = entradas.filter((e) => e.origen === 'libre' && e.momento !== 'desayuno').length
   ind.huecosPlanificados = 14 - libres
   ind.escala = ind.huecosPlanificados / 14
   const protPlatos = fechas.map(() => 0)
@@ -113,16 +118,13 @@ export function indicadores(entradas: EntradaMin[], ctx: Pick<ContextoMenu, 'lun
     if (e.origen === 'libre' || !e.recipe_id) continue
     const r = recetas.get(e.recipe_id)
     if (!r) continue
-    contarGrupo(ind, r.grupo_proteico)
+    if (e.momento !== 'desayuno') contarGrupo(ind, r.grupo_proteico)
     const d = fechas.indexOf(e.fecha)
     const p = ctx.proteina.get(r.id)
     if (p == null) ind.sinProteina++
     if (d >= 0) protPlatos[d] += p ?? estimarDesconocida
   }
-  for (const c of ctx.comensales) {
-    const [lv, fd] = ctx.proteinaDesayuno.get(c.id) ?? [0, 0]
-    ind.proteinaDia.set(c.id, protPlatos.map((p, d) => (d <= 4 ? lv : fd) + p * c.factor))
-  }
+  for (const c of ctx.comensales) ind.proteinaDia.set(c.id, protPlatos.map((p) => p * c.factor))
   return ind
 }
 
@@ -195,8 +197,8 @@ function penalizacion(asig: (Asignada | null)[], ctx: ContextoMenu, recetas: Map
     protPlatos[a.dia] += ctx.proteina.get(a.recipe_id) ?? 25
   }
   for (const c of ctx.comensales) {
-    const [lv, fd] = ctx.proteinaDesayuno.get(c.id) ?? [0, 0]
-    ind.proteinaDia.set(c.id, protPlatos.map((g, d) => (d <= 4 ? lv : fd) + g * c.factor))
+    const des = ctx.proteinaDesayuno?.get(c.id) ?? []
+    ind.proteinaDia.set(c.id, protPlatos.map((g, d) => (des[d] ?? 0) + g * c.factor))
   }
   const s = ind.escala
   let p = 0
@@ -254,15 +256,71 @@ export interface ResultadoMenu {
   avisos: string[]
 }
 
+type OpcionesGenerar = { rnd?: () => number; intentos?: number; soloHueco?: { fecha: string; momento: Momento } }
+
 /**
- * Propone la semana. `actuales` son las entradas que ya hay: se respetan las fijadas y los huecos libres;
- * el resto se vuelve a elegir. Con `soloHueco` solo se cambia ese hueco.
+ * Propone la semana (desayuno, comida y cena). `actuales` son las entradas que ya hay: se respetan las fijadas
+ * y los huecos libres; el resto se vuelve a elegir. Con `soloHueco` solo se cambia ese hueco.
  */
-export function generarMenu(
-  ctx: ContextoMenu,
-  actuales: EntradaPlan[],
-  opciones: { rnd?: () => number; intentos?: number; soloHueco?: { fecha: string; momento: Momento } } = {},
-): ResultadoMenu {
+export function generarMenu(ctx: ContextoMenu, actuales: EntradaPlan[], opciones: OpcionesGenerar = {}): ResultadoMenu {
+  const rnd = opciones.rnd ?? Math.random
+  const desActuales = actuales.filter((e) => e.momento === 'desayuno')
+  const resto = actuales.filter((e) => e.momento !== 'desayuno')
+  const solo = opciones.soloHueco
+  const desayunos = solo && solo.momento !== 'desayuno' ? desActuales : generarDesayunos(ctx, desActuales, rnd, solo?.fecha)
+  if (solo?.momento === 'desayuno') return { entradas: [...desayunos, ...resto], avisos: [] }
+  // Proteína de cada desayuno, por persona y día, para equilibrar el resto del día
+  const fechas = fechasSemana(ctx.lunes)
+  const proteinaDesayuno = new Map(
+    ctx.comensales.map((c) => [c.id, fechas.map((f) => {
+      const e = desayunos.find((x) => x.fecha === f)
+      return e?.recipe_id && e.origen !== 'libre' ? (ctx.proteina.get(e.recipe_id) ?? 20) * c.factor : 0
+    })]),
+  )
+  const r = generarComidasCenas({ ...ctx, proteinaDesayuno }, resto, opciones)
+  return { entradas: [...desayunos, ...r.entradas], avisos: r.avisos }
+}
+
+/** Desayunos: recetas de tipo desayuno, con variedad suave (repetir desayuno es normal) */
+function generarDesayunos(ctx: ContextoMenu, actuales: EntradaPlan[], rnd: () => number, soloFecha?: string): EntradaPlan[] {
+  const recetas = new Map(ctx.recetas.map((r) => [r.id, r]))
+  const actual = new Map(actuales.map((e) => [e.fecha, e]))
+  const fechas = fechasSemana(ctx.lunes)
+  const cambia = (f: string) => {
+    const e = actual.get(f)
+    return soloFecha ? f === soloFecha : !(e && (e.fijado || e.origen === 'libre'))
+  }
+  const disp = new Map(ctx.congelados.map((c) => [c.id, c.raciones]))
+  for (const e of actuales) if (e.freezer_item_id && cambia(e.fecha)) disp.set(e.freezer_item_id, (disp.get(e.freezer_item_id) ?? 0) + e.raciones)
+  const usos = new Map<string, number>()
+  for (const e of actuales) if (e.recipe_id && !cambia(e.fecha)) usos.set(e.recipe_id, (usos.get(e.recipe_id) ?? 0) + 1)
+  return fechas.map((fecha, dia) => {
+    const e = actual.get(fecha)
+    if (!cambia(fecha)) return { ...e! }
+    let mejor: Opcion | null = null
+    let mejorP = Infinity
+    for (const o of opcionesHueco({ dia, fecha, momento: 'desayuno' }, ctx, disp)) {
+      const r = recetas.get(o.recipe_id)!
+      let p = 0.5 * (usos.get(o.recipe_id) ?? 0) - 0.35 * ((r.valoracion ?? 3) - 3) - (r.favorita ? 0.4 : 0) + rnd() * 1.2
+      if (o.origen === 'congelador') p -= 1.5
+      if (soloFecha && e?.recipe_id === o.recipe_id) p += 3 // «otro desayuno»: mejor uno distinto
+      if (p < mejorP) {
+        mejorP = p
+        mejor = o
+      }
+    }
+    if (mejor) {
+      usos.set(mejor.recipe_id, (usos.get(mejor.recipe_id) ?? 0) + 1)
+      if (mejor.freezer_item_id) disp.set(mejor.freezer_item_id, (disp.get(mejor.freezer_item_id) ?? 0) - ctx.raciones)
+    }
+    return {
+      id: e?.id, fecha, momento: 'desayuno', recipe_id: mejor?.recipe_id ?? null, raciones: ctx.raciones, origen: mejor?.origen ?? 'fresco',
+      freezer_item_id: mejor?.freezer_item_id ?? null, fijado: false, nota: null, extras: e?.extras ?? [],
+    }
+  })
+}
+
+function generarComidasCenas(ctx: ContextoMenu, actuales: EntradaPlan[], opciones: OpcionesGenerar = {}): ResultadoMenu {
   const rnd = opciones.rnd ?? Math.random
   const intentos = opciones.intentos ?? 30
   const hs = huecos(ctx.lunes)
@@ -357,6 +415,7 @@ export function generarMenu(
       freezer_item_id: a?.freezer_item_id ?? null,
       fijado: false,
       nota: null,
+      extras: e?.extras ?? [],
     }
   })
 
@@ -398,7 +457,14 @@ function elegir(
 export function avisosRecetario(recetas: Receta[]): string[] {
   const platos = recetas.filter(esPlato)
   const av: string[] = []
-  if (platos.length === 0) return ['Aún no hay recetas de comida o cena en el recetario. Añade las vuestras (o impórtalas) y vuelve a proponer la semana.']
+  if (!recetas.some(esDesayuno)) av.push('No hay recetas de desayuno (tipo «Desayuno»): los desayunos se quedan vacíos. Puedes crear las vuestras o añadir alimentos sueltos a cada desayuno.')
+  if (platos.length === 0) {
+    const bases = recetas.filter((r) => r.es_base).length
+    const des = recetas.filter(esDesayuno).length
+    const motivo = recetas.length === 0 ? 'El recetario está vacío' : `Tienes ${recetas.length} receta${recetas.length === 1 ? '' : 's'}, pero ${[des ? `${des} de desayuno` : '', bases ? `${bases} marcada${bases === 1 ? '' : 's'} como preparación base` : ''].filter(Boolean).join(' y ')}`
+    av.push(`${motivo}: no hay ninguna de comida o cena. Edita la receta y elige «Comida», «Cena» o «Comida o cena» (y quita «Preparación base» si es un plato completo).`)
+    return av
+  }
   const comidas = platos.filter((r) => sirvePara(r, 'comida'))
   const cenas = platos.filter((r) => sirvePara(r, 'cena'))
   const rapidas = cenas.filter(aptaCenaRapida)
@@ -424,7 +490,7 @@ export function avisosRecetario(recetas: Receta[]): string[] {
 
 export function avisosMenu(entradas: EntradaPlan[], ctx: ContextoMenu): string[] {
   const av: string[] = []
-  const vacios = entradas.filter((e) => e.origen !== 'libre' && !e.recipe_id)
+  const vacios = entradas.filter((e) => e.origen !== 'libre' && !e.recipe_id && e.momento !== 'desayuno')
   for (const e of vacios) {
     const d = DIAS[fechasSemana(ctx.lunes).indexOf(e.fecha)]
     const motivo = esComidaDeBatch({ dia: fechasSemana(ctx.lunes).indexOf(e.fecha), momento: e.momento })
@@ -453,6 +519,7 @@ export function avisosMenu(entradas: EntradaPlan[], ctx: ContextoMenu): string[]
 /** Reglas duras que incumple un plato puesto a mano (para avisar, no para impedirlo) */
 export function problemasEntrada(e: EntradaPlan, otra: EntradaPlan | undefined, r: Receta | undefined, dia: number): string[] {
   if (!r || e.origen === 'libre') return []
+  if (e.momento === 'desayuno') return r.tipo_comida === 'desayuno' ? [] : ['No es una receta de desayuno']
   const p: string[] = []
   if (otra?.recipe_id && otra.recipe_id === e.recipe_id && otra.origen !== 'libre') p.push('Se repite en el mismo día')
   if (esCenaEntreSemana({ dia, momento: e.momento }) && e.origen === 'fresco' && !aptaCenaRapida(r)) {

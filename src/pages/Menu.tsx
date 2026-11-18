@@ -1,20 +1,21 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useDatos } from '../lib/datos'
-import { useComensales, useMenu, useSemana } from '../lib/menu'
+import { useComensales, useSemana } from '../lib/menu'
 import { useContextoMenu } from '../lib/contexto'
 import { useSemanaElegida } from '../lib/useSemanaElegida'
-import { avisosMenu, avisosRecetario, generarMenu, indicadores, objetivos, problemasEntrada, semaforoProteina } from '../lib/generador'
+import { MOMENTOS_DIA, avisosMenu, avisosRecetario, generarMenu, indicadores, objetivos, problemasEntrada, semaforoProteina } from '../lib/generador'
 import { DIAS, fechaCorta, fechasSemana } from '../lib/semana'
 import { fmt } from '../lib/nutricion'
 import { ORIGENES, etiquetaGrupo, type EntradaPlan, type Momento } from '../lib/tipos'
 import SelectorSemana, { EnlacesSemana } from '../components/SelectorSemana'
 import SelectorPlato from '../components/SelectorPlato'
 
+const NOMBRE_MOMENTO: Record<Momento, string> = { desayuno: 'Desayuno', comida: 'Comida', cena: 'Cena' }
+
 export default function Menu() {
   const [lunes, setLunes] = useSemanaElegida()
   const { mapaRecetas, recetas, mapaIngredientes } = useDatos()
-  const { desayunos } = useMenu()
   const comensales = useComensales()
   const semana = useSemana(lunes)
   const ctx = useContextoMenu(lunes)
@@ -66,9 +67,6 @@ export default function Menu() {
   }
 
   const cambiar = (e: EntradaPlan) => semana.guardarEntradas([e]).catch((x) => setError(x.message))
-
-  const nombresDesayuno = (dias: 'lv' | 'fd') =>
-    desayunos.filter((d) => d.dias === dias).map((d) => mapaIngredientes.get(d.ingredient_id)?.nombre).filter(Boolean).join(', ') || 'Sin configurar'
 
   const protMedia = (id: string) => {
     const dias = ind.proteinaDia.get(id) ?? []
@@ -151,19 +149,15 @@ export default function Menu() {
               })}
             </span>
           </div>
-          <div className="hueco desayuno">
-            <span className="momento">Desayuno</span>
-            <Link to={`/desayunos?semana=${lunes}`} className="plato-desayuno">☕ {nombresDesayuno(dia <= 4 ? 'lv' : 'fd')}</Link>
-          </div>
-          {(['comida', 'cena'] as Momento[]).map((momento) => {
+          {MOMENTOS_DIA.map((momento) => {
             const e = porHueco.get(`${fecha}|${momento}`)
-            const otra = porHueco.get(`${fecha}|${momento === 'comida' ? 'cena' : 'comida'}`)
+            const otra = momento === 'desayuno' ? undefined : porHueco.get(`${fecha}|${momento === 'comida' ? 'cena' : 'comida'}`)
             const r = e?.recipe_id ? mapaRecetas.get(e.recipe_id) : undefined
             const g = etiquetaGrupo(r?.grupo_proteico)
             const problemas = e ? problemasEntrada(e, otra, r, dia) : []
             return (
               <div key={momento} className={`hueco ${e?.fijado ? 'fijado' : ''}`}>
-                <span className="momento">{momento === 'comida' ? 'Comida' : 'Cena'}</span>
+                <span className="momento">{NOMBRE_MOMENTO[momento]}</span>
                 <div className="plato">
                   {e?.origen === 'libre' ? (
                     <button className="titulo-plato libre" onClick={() => setEligiendo({ fecha, momento })}>🚶 Fuera de casa{e.nota ? ` · ${e.nota}` : ''}</button>
@@ -172,15 +166,22 @@ export default function Menu() {
                       <Link to={`/receta/${r.id}`} className="titulo-plato">{r.titulo}</Link>
                       <div className="chips">
                         {g && <span className={`chip g-${g.valor}`}>{g.emoji} {g.etiqueta}</span>}
-                        <span className="chip">{ORIGENES[e!.origen].emoji} {ORIGENES[e!.origen].etiqueta}</span>
+                        {!(momento === 'desayuno' && e!.origen === 'fresco') && <span className="chip">{ORIGENES[e!.origen].emoji} {ORIGENES[e!.origen].etiqueta}</span>}
                         {problemas.map((p) => (
                           <span key={p} className="chip problema">⚠️ {p}</span>
                         ))}
                       </div>
                     </>
                   ) : (
-                    <button className="titulo-plato vacio-plato" onClick={() => setEligiendo({ fecha, momento })}>
-                      {e?.recipe_id ? 'Receta borrada · elegir otra' : '+ Elegir plato'}
+                    !e?.extras?.length && (
+                      <button className="titulo-plato vacio-plato" onClick={() => setEligiendo({ fecha, momento })}>
+                        {e?.recipe_id ? 'Receta borrada · elegir otra' : momento === 'desayuno' ? '+ Elegir desayuno' : '+ Elegir plato'}
+                      </button>
+                    )
+                  )}
+                  {e && e.origen !== 'libre' && (e.extras?.length ?? 0) > 0 && (
+                    <button className="extras" onClick={() => setEligiendo({ fecha, momento })}>
+                      ➕ {e.extras!.map((x) => mapaIngredientes.get(x.ingredient_id)?.nombre ?? '¿?').join(', ')}
                     </button>
                   )}
                 </div>
@@ -202,10 +203,13 @@ export default function Menu() {
           hueco={eligiendo}
           ctx={ctx}
           actual={porHueco.get(`${eligiendo.fecha}|${eligiendo.momento}`)}
-          otra={porHueco.get(`${eligiendo.fecha}|${eligiendo.momento === 'comida' ? 'cena' : 'comida'}`)}
+          otra={eligiendo.momento === 'desayuno' ? undefined : porHueco.get(`${eligiendo.fecha}|${eligiendo.momento === 'comida' ? 'cena' : 'comida'}`)}
           entradas={semana.entradas}
           onElegir={async (e) => {
             setEligiendo(null)
+            await cambiar(e)
+          }}
+          onGuardar={async (e) => {
             await cambiar(e)
           }}
           onVaciar={async () => {

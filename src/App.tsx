@@ -12,7 +12,6 @@ import Ingredientes from './pages/Ingredientes'
 import Menu from './pages/Menu'
 import Domingo from './pages/Domingo'
 import Congelador from './pages/Congelador'
-import Desayunos from './pages/Desayunos'
 import Compra from './pages/Compra'
 import { MenuProvider } from './lib/menu'
 
@@ -26,7 +25,7 @@ function Pestanas() {
         <Outlet />
       </main>
       <nav className="pestanas">
-        <NavLink to="/" end className={({ isActive }) => (isActive || ['/domingo', '/congelador', '/desayunos'].includes(loc.pathname) ? 'active' : '')}>
+        <NavLink to="/" end className={({ isActive }) => (isActive || ['/domingo', '/congelador'].includes(loc.pathname) ? 'active' : '')}>
           <span>🗓️</span>Menú
         </NavLink>
         <NavLink to="/compra">
@@ -68,7 +67,6 @@ export default function App() {
         <Route index element={<Menu />} />
         <Route path="domingo" element={<Domingo />} />
         <Route path="congelador" element={<Congelador />} />
-        <Route path="desayunos" element={<Desayunos />} />
         <Route path="compra" element={<Compra />} />
         <Route path="recetas" element={<Recetas />} />
         <Route path="receta/nueva" element={<EditarReceta key={loc.key} />} />

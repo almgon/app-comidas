@@ -2,7 +2,7 @@
 import { normalizar } from '../../shared/parser.js'
 import type { ItemBatch } from './batch'
 import { aUnidadBase, cantidadCompra, enEnvases, fmtBase } from './cantidades'
-import type { Comensal, EntradaPlan, Envase, Ingrediente, LineaDesayuno, Receta } from './tipos'
+import type { Comensal, EntradaPlan, Envase, Ingrediente, Receta } from './tipos'
 
 /** Orden de los pasillos (más o menos el recorrido de Mercadona y Dia) */
 export const PASILLOS = [
@@ -43,7 +43,6 @@ export interface DatosCompra {
   recetas: Map<string, Receta>
   ingredientes: Map<string, Ingrediente>
   batch: ItemBatch[]
-  desayunos: LineaDesayuno[]
   comensales: Comensal[]
   envases: Map<string, Envase>
   /** incluir fruta de temporada (3 raciones/día por persona) */
@@ -84,16 +83,12 @@ export function calcularCompra(d: DatosCompra): Necesidad[] {
     }
   }
 
-  // Desayunos
-  for (let dia = 0; dia < 7; dia++) {
-    const tipo = dia <= 4 ? 'lv' : 'fd'
-    for (const l of d.desayunos.filter((x) => x.dias === tipo)) {
-      const ing = d.ingredientes.get(l.ingredient_id)
-      if (!ing) continue
-      const total = d.comensales.reduce((s, c) => s + (Number(l.cantidades[c.id]) || 0), 0)
-      if (total <= 0) continue
-      const q = aUnidadBase(total, l.unidad, ing)
-      sumar(ing, ing.nombre, q, 'Desayunos')
+  // Alimentos sueltos añadidos a un desayuno, comida o cena
+  for (const e of d.entradas) {
+    if (e.origen === 'libre') continue
+    for (const x of e.extras ?? []) {
+      const ing = d.ingredientes.get(x.ingredient_id)
+      if (ing) sumar(ing, ing.nombre, x.cantidad, e.momento === 'desayuno' ? 'Desayunos' : 'Añadido al menú')
     }
   }
 
