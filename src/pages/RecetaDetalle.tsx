@@ -26,7 +26,7 @@ export default function RecetaDetalle() {
   const [raciones, setRaciones] = useState<number | null>(null)
   const [hechos, setHechos] = useState<Set<number>>(new Set())
 
-  if (!receta) return <p className="vacio">No encuentro esta receta. <Link to="/">Volver</Link></p>
+  if (!receta) return <p className="vacio">No encuentro esta receta. <Link to="/recetas">Volver</Link></p>
 
   const rac = raciones ?? receta.raciones
   const factor = rac / receta.raciones
@@ -39,7 +39,7 @@ export default function RecetaDetalle() {
     const aviso = usadaEn.length ? `\n\nOjo: se usa como base en ${usadaEn.map((r) => r.titulo).join(', ')}.` : ''
     if (!confirm(`¿Borrar «${receta!.titulo}»?${aviso}`)) return
     await borrarReceta(receta!.id)
-    nav('/', { replace: true })
+    nav('/recetas', { replace: true })
   }
 
   return (

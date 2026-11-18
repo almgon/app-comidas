@@ -15,6 +15,7 @@ Necesitas un ordenador para estos pasos (una sola vez). Después la app se usa d
    - Abre en GitHub el archivo [`supabase/migrations/001_recetario.sql`](supabase/migrations/001_recetario.sql), pulsa el botón de copiar, pégalo y pulsa **Run**. Debe decir *Success*.
    - Repite con [`supabase/migrations/002_catalogo_ingredientes.sql`](supabase/migrations/002_catalogo_ingredientes.sql) (el catálogo de ingredientes).
    - Y con [`supabase/migrations/003_mas_alimentos.sql`](supabase/migrations/003_mas_alimentos.sql) (más alimentos y protección contra duplicados).
+   - Y con [`supabase/migrations/004_menu_y_compra.sql`](supabase/migrations/004_menu_y_compra.sql) (menú semanal, desayunos, domingo de cocina, congelador y lista de la compra).
 4. Login: menú **Authentication** → **Sign In / Providers** → **Email**.
    - Recomendado: desactiva **Confirm email** y guarda. Así podéis entrar nada más crear la cuenta (si lo dejas activado, el enlace del email se abre en Safari y luego hay que volver a la app).
 5. Copia las claves: menú **Project Settings** → **API Keys** (o **Data API**):
@@ -50,3 +51,20 @@ Opcional: en Ajustes están los pasos para crear el Atajo de iOS «Guardar recet
 
 - Supabase Free: 500 MB de base de datos y 1 GB de fotos (miles de recetas). **Pausa el proyecto si pasa 7 días sin uso**; se reactiva desde el panel de Supabase con un clic.
 - Vercel Hobby: de sobra para uso personal.
+
+
+## Actualizar a la fase 2 (menú y lista de la compra)
+
+Si ya tenías la app funcionando, solo hay un paso:
+
+1. En Supabase: **SQL Editor** → **New query**.
+2. Abre [`supabase/migrations/004_menu_y_compra.sql`](supabase/migrations/004_menu_y_compra.sql) en GitHub, copia todo, pégalo y pulsa **Run**. Debe decir *Success* (se puede ejecutar más de una vez sin problema).
+3. En el iPhone, cierra la app del todo y vuelve a abrirla (a veces hace falta dos veces) para que cargue la versión nueva.
+
+Primeros pasos en la app:
+- **Ajustes**: comprobad que cada uno tiene su peso y factor (Alberto 1, pareja 1,25).
+- **Menú → ☕ Desayunos**: se crean solos con las cantidades acordadas; cambiadlas si queréis.
+- **Recetas**: para que el generador funcione bien, cada receta de comida/cena necesita *tipo* (comida, cena o ambas), *proteína principal*, *tiempos* (para saber si vale como cena de entre semana) y, si se puede, *congelable* y *días en nevera*. El menú avisa de lo que falta.
+- **Menú → ✨ Proponer semana**. Fija (📌) lo que quieras mantener y vuelve a proponer; 🎲 cambia un solo plato; ✏️ para elegirlo a mano o marcar «comemos fuera».
+- **🍲 Domingo**: lo que hay que cocinar, cuánto y qué va a la nevera o al congelador. Al terminar, lo que sobra se guarda en **❄️ Congelador**.
+- **🛒 Compra**: «Crear lista desde el menú». Lo que marca uno lo ve el otro al momento.

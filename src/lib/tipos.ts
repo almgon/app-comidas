@@ -26,6 +26,7 @@ export interface Hogar {
   id: string
   nombre: string
   codigo_invitacion: string
+  desayunos_iniciados?: boolean
 }
 
 export interface Perfil {
@@ -49,6 +50,8 @@ export interface Ingrediente {
   grasa_100: number | null
   es_despensa: boolean
   codigo_off?: string | null
+  envase_cantidad?: number | null
+  envase_nombre?: string | null
 }
 
 export interface LineaIngrediente {
@@ -98,3 +101,107 @@ export const aptaCenaRapida = (r: Pick<Receta, 't_prep_min' | 't_coccion_min'>) 
   const t = tiempoTotal(r)
   return t != null && t <= 30
 }
+
+// =========================================================
+// Fase 2: menú, desayunos, congelador y compra
+// =========================================================
+export type Momento = 'comida' | 'cena'
+export type Origen = 'fresco' | 'batch' | 'congelador' | 'libre'
+
+export const ORIGENES: Record<Origen, { etiqueta: string; emoji: string }> = {
+  fresco: { etiqueta: 'Se cocina ese día', emoji: '🔥' },
+  batch: { etiqueta: 'Cocinado el domingo', emoji: '🍲' },
+  congelador: { etiqueta: 'Del congelador', emoji: '❄️' },
+  libre: { etiqueta: 'Hueco libre (fuera de casa)', emoji: '🚶' },
+}
+
+export interface EntradaPlan {
+  id?: string
+  fecha: string
+  momento: Momento
+  recipe_id: string | null
+  raciones: number
+  origen: Origen
+  freezer_item_id: string | null
+  fijado: boolean
+  nota: string | null
+}
+
+export interface EstadoBatch {
+  /** Raciones de más para congelar (para semanas siguientes). Si no está, se usa la sugerencia. */
+  extra?: number
+  hecho?: boolean
+}
+
+export interface PlanSemana {
+  id: string
+  semana_inicio: string
+  batch: Record<string, EstadoBatch>
+  batch_cerrado_en: string | null
+}
+
+export interface Congelado {
+  id: string
+  recipe_id: string | null
+  nombre: string
+  raciones: number
+  congelado_en: string
+  nota: string | null
+}
+
+export interface LineaDesayuno {
+  id: string
+  dias: 'lv' | 'fd'
+  ingredient_id: string
+  unidad: string
+  /** cantidad por id de perfil */
+  cantidades: Record<string, number>
+  orden: number
+}
+
+export interface Envase {
+  cantidad: number
+  nombre: string
+}
+
+export interface ArticuloCompra {
+  id: string
+  list_id: string
+  ingredient_id: string | null
+  texto: string
+  categoria: string
+  cantidad: number | null
+  unidad: string | null
+  detalle: string | null
+  origen: string | null
+  es_despensa: boolean
+  manual: boolean
+  comprado: boolean
+  comprado_por: string | null
+  comprado_en: string | null
+}
+
+export interface ListaCompra {
+  id: string
+  plan_id: string
+  generada_en: string
+  umbral_ahorro: number
+}
+
+/** Miembro del hogar con su objetivo de proteína */
+export interface Comensal {
+  id: string
+  nombre: string
+  factor: number
+  protMin: number
+  protMax: number
+}
+
+export function comensalesDe(miembros: Perfil[]): Comensal[] {
+  return miembros.map((m) => {
+    const peso = m.peso_kg ? Number(m.peso_kg) : 70 * (Number(m.factor_racion) || 1)
+    return { id: m.id, nombre: m.nombre, factor: Number(m.factor_racion) || 1, protMin: Math.round(peso * 1.2), protMax: Math.round(peso * 1.6) }
+  })
+}
+
+export const racionesHogar = (c: Comensal[]) => (c.length ? Math.round(c.reduce((s, x) => s + x.factor, 0) * 100) / 100 : 2)

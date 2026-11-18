@@ -1,0 +1,184 @@
+import { useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { useDatos } from '../lib/datos'
+import { useComensales, useMenu, useSemana } from '../lib/menu'
+import { useSemanaElegida } from '../lib/useSemanaElegida'
+import { sesionDomingo } from '../lib/batch'
+import { calcularCompra, claveArticulo, ordenPasillo, textoCantidad } from '../lib/compra'
+import { fmtBase } from '../lib/cantidades'
+import type { ArticuloCompra } from '../lib/tipos'
+import SelectorSemana from '../components/SelectorSemana'
+
+export default function Compra() {
+  const [lunes, setLunes] = useSemanaElegida()
+  const { mapaRecetas, mapaIngredientes, miembros, sesion } = useDatos()
+  const { desayunos, congelados, envases, guardarEnvase } = useMenu()
+  const comensales = useComensales()
+  const semana = useSemana(lunes)
+  const [ocultar, setOcultar] = useState(false)
+  const [verDespensa, setVerDespensa] = useState(false)
+  const [nuevo, setNuevo] = useState('')
+  const [generando, setGenerando] = useState(false)
+  const [envaseDe, setEnvaseDe] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const necesidades = useMemo(() => {
+    const batch = sesionDomingo(lunes, semana.entradas, mapaRecetas, semana.plan?.batch ?? {}, congelados)
+    return calcularCompra({ lunes, entradas: semana.entradas, recetas: mapaRecetas, ingredientes: mapaIngredientes, batch, desayunos, comensales, envases })
+  }, [lunes, semana.entradas, semana.plan, mapaRecetas, mapaIngredientes, congelados, desayunos, comensales, envases])
+
+  // ¿La lista guardada coincide con lo que pide el menú ahora?
+  const desfasada = useMemo(() => {
+    if (!semana.lista) return false
+    const firma = (xs: { clave: string; cantidad: number | null; detalle: string | null }[]) => xs.map((x) => `${x.clave}=${x.cantidad ?? ''}|${x.detalle ?? ''}`).sort().join(';')
+    const guardados = semana.articulos.filter((a) => !a.manual).map((a) => ({ clave: claveArticulo(a), cantidad: a.cantidad, detalle: a.detalle }))
+    return firma(guardados) !== firma(necesidades)
+  }, [semana.lista, semana.articulos, necesidades])
+
+  const nombre = (uid: string | null) => miembros.find((m) => m.id === uid)?.nombre
+  const articulos = semana.articulos
+  const normales = articulos.filter((a) => !a.es_despensa)
+  const despensa = articulos.filter((a) => a.es_despensa)
+  const pendientes = normales.filter((a) => !a.comprado).length
+  const grupos = useMemo(() => {
+    const m = new Map<string, ArticuloCompra[]>()
+    for (const a of normales) if (!ocultar || !a.comprado) m.set(a.categoria, [...(m.get(a.categoria) ?? []), a])
+    return [...m].sort((a, b) => ordenPasillo(a[0]) - ordenPasillo(b[0]))
+  }, [normales, ocultar])
+
+  async function generar() {
+    setGenerando(true)
+    setError(null)
+    try {
+      await semana.generarLista(necesidades)
+    } catch (e: any) {
+      setError(e.message)
+    } finally {
+      setGenerando(false)
+    }
+  }
+
+  const fila = (a: ArticuloCompra) => {
+    const ing = a.ingredient_id ? mapaIngredientes.get(a.ingredient_id) : undefined
+    const quien = a.comprado && a.comprado_por !== sesion?.user.id ? nombre(a.comprado_por) : null
+    return (
+      <li key={a.id} className={a.comprado ? 'comprado' : ''}>
+        <label className="articulo">
+          <input type="checkbox" checked={a.comprado} onChange={(e) => semana.marcar(a, e.target.checked)} />
+          <span className="texto">
+            <span className="nombre">
+              {a.texto} {a.cantidad != null && <b>{textoCantidad(a.cantidad, a.unidad)}</b>}
+            </span>
+            {a.detalle && <span className="detalle">{a.detalle}</span>}
+            {a.origen && <span className="origen">{a.origen}</span>}
+            {quien && <span className="origen">✓ {quien}</span>}
+          </span>
+        </label>
+        {a.manual ? (
+          <button className="enlace peligro" onClick={() => semana.borrarArticulo(a.id)} aria-label="Quitar">✕</button>
+        ) : ing && a.unidad ? (
+          <button className="icono" title="Envase" onClick={() => setEnvaseDe(envaseDe === ing.id ? null : ing.id)}>📦</button>
+        ) : null}
+        {envaseDe && envaseDe === ing?.id && (
+          <EditorEnvase
+            unidad={ing.unidad_base}
+            actual={envases.get(ing.id) ?? (ing.envase_cantidad ? { cantidad: Number(ing.envase_cantidad), nombre: ing.envase_nombre ?? 'envase' } : null)}
+            onGuardar={async (e) => {
+              await guardarEnvase(ing.id, e)
+              setEnvaseDe(null)
+            }}
+          />
+        )}
+      </li>
+    )
+  }
+
+  return (
+    <div className="compra">
+      <header className="cabecera">
+        <h1>Compra</h1>
+        {semana.lista && <span className="suave">{pendientes} por comprar</span>}
+      </header>
+      <SelectorSemana lunes={lunes} onCambiar={setLunes} />
+      {semana.error && <p className="aviso">{semana.error}</p>}
+      {error && <p className="error">{error}</p>}
+
+      {!semana.lista ? (
+        <div className="vacio">
+          {semana.entradas.some((e) => e.recipe_id) ? (
+            <>
+              <p>Saca la lista de la compra del menú de esta semana: desayunos, platos, sesión del domingo y fruta, sin lo que hay en el congelador.</p>
+              <button className="boton primario" onClick={generar} disabled={generando}>{generando ? 'Calculando…' : '🛒 Crear lista desde el menú'}</button>
+            </>
+          ) : (
+            <p>
+              Todavía no hay menú para esta semana. <Link to={`/?semana=${lunes}`}>Prepara el menú</Link> y vuelve aquí.
+            </p>
+          )}
+        </div>
+      ) : (
+        <>
+          {desfasada && (
+            <div className="aviso fila espacio">
+              <span>El menú ha cambiado desde que se hizo la lista.</span>
+              <button className="boton" onClick={generar} disabled={generando}>{generando ? '…' : 'Actualizar'}</button>
+            </div>
+          )}
+          <div className="fila espacio margen-arriba">
+            <label className="check">
+              <input type="checkbox" checked={ocultar} onChange={(e) => setOcultar(e.target.checked)} /> Ocultar lo comprado
+            </label>
+            {!desfasada && <button className="enlace" onClick={generar} disabled={generando}>Recalcular</button>}
+          </div>
+          <form
+            className="fila margen-arriba"
+            onSubmit={async (e) => {
+              e.preventDefault()
+              await semana.anadirArticulo(nuevo)
+              setNuevo('')
+            }}
+          >
+            <input placeholder="Añadir algo (papel de cocina…)" value={nuevo} onChange={(e) => setNuevo(e.target.value)} />
+            <button className="boton" disabled={!nuevo.trim()}>Añadir</button>
+          </form>
+
+          {grupos.map(([cat, xs]) => (
+            <section key={cat}>
+              <h2 className="pasillo">{cat}</h2>
+              <ul className="lista-compra">{xs.map(fila)}</ul>
+            </section>
+          ))}
+          {pendientes === 0 && normales.length > 0 && <p className="ok">🎉 Todo comprado.</p>}
+
+          {despensa.length > 0 && (
+            <section>
+              <button className="enlace" onClick={() => setVerDespensa(!verDespensa)}>
+                🧂 Despensa: comprueba que tienes ({despensa.length}) {verDespensa ? '▲' : '▼'}
+              </button>
+              {verDespensa && <ul className="lista-compra">{despensa.map(fila)}</ul>}
+            </section>
+          )}
+          <p className="suave margen-arriba">
+            Las cantidades suman todos los platos y se redondean al envase. Toca 📦 para cambiar el envase de un producto. Lo que sale del congelador y los huecos «fuera de casa» no cuentan.
+          </p>
+        </>
+      )}
+    </div>
+  )
+}
+
+function EditorEnvase({ unidad, actual, onGuardar }: { unidad: 'g' | 'ml' | 'ud'; actual: { cantidad: number; nombre: string } | null; onGuardar: (e: { cantidad: number; nombre: string } | null) => Promise<void> }) {
+  const [cantidad, setCantidad] = useState(actual?.cantidad?.toString() ?? '')
+  const [nombre, setNombre] = useState(actual?.nombre ?? 'paquete')
+  const n = Number(cantidad.replace(',', '.'))
+  return (
+    <div className="editor-envase">
+      <span className="suave">Se vende en</span>
+      <input className="mini-num" inputMode="decimal" value={cantidad} onChange={(e) => setCantidad(e.target.value)} placeholder="400" />
+      <span>{unidad}</span>
+      <input value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="bandeja" />
+      <button className="boton" disabled={!(n > 0)} onClick={() => onGuardar({ cantidad: n, nombre: nombre.trim() || 'envase' })}>Guardar</button>
+      {actual && <span className="suave">Ahora: {fmtBase(actual.cantidad, unidad)}</span>}
+    </div>
+  )
+}
