@@ -102,8 +102,10 @@ export default function Ajustes() {
         <p className="suave">Safari no deja que una web aparezca en «Compartir», pero un Atajo sí:</p>
         <ol>
           <li>Abre la app Atajos y crea un atajo nuevo.</li>
-          <li>En sus detalles (ⓘ) activa «Mostrar en hoja de compartir» y deja solo «URL» y «Texto».</li>
-          <li>Añade la acción «Abrir URL» con esta dirección y, al final, la variable «Entrada del atajo»:</li>
+          <li>En sus detalles (ⓘ) activa «Mostrar en hoja de compartir» y, arriba, deja solo «URL» y «Texto».</li>
+          <li>Añade la acción «Codificar URL» (entrada: «Entrada del atajo»).</li>
+          <li>Añade la acción «URL» con esta dirección y, justo al final, la variable «URL codificada»:</li>
+          <li>Añade la acción «Abrir URL».</li>
         </ol>
         <code className="bloque">{origen}/importar?url=</code>
         <p className="suave">
