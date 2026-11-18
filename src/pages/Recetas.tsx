@@ -50,7 +50,7 @@ export default function Recetas() {
     return res.sort(cmp[orden])
   }, [recetas, q, tipo, grupo, tag, maxMin, soloFav, bases, orden, mapaIngredientes])
 
-  const nFiltros = [tipo, grupo, tag, maxMin, soloFav || '', bases !== 'todas' ? bases : ''].filter((x) => x !== '' && x !== false).length
+  const nFiltros = [tipo, grupo, tag, maxMin, soloFav ? 'fav' : '', bases !== 'todas' ? bases : ''].filter((x) => x !== '').length
 
   return (
     <div>
