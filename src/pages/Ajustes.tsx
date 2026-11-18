@@ -103,11 +103,9 @@ export default function Ajustes() {
         <ol>
           <li>Abre la app Atajos y crea un atajo nuevo.</li>
           <li>En sus detalles (ⓘ) activa «Mostrar en hoja de compartir» y, arriba, deja solo «URL» y «Texto».</li>
-          <li>Añade la acción «Codificar URL» (entrada: «Entrada del atajo»).</li>
-          <li>Añade la acción «URL» con esta dirección y, justo al final, la variable «URL codificada»:</li>
-          <li>Añade la acción «Abrir URL».</li>
+          <li>Añade solo la acción «Abrir URL». En su campo escribe esta dirección (con la # al final) y, pegada detrás, la variable «Entrada del atajo»:</li>
         </ol>
-        <code className="bloque">{origen}/importar?url=</code>
+        <code className="bloque">{origen}/importar#</code>
         <p className="suave">
           Llámalo «Guardar receta». Desde Instagram, TikTok o Safari: Compartir → Guardar receta. Se abre en Safari, así que inicia sesión allí también la primera vez. Alternativa sin atajo: copia el enlace y pulsa «Pegar» en Importar.
         </p>

@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { parsearTextoReceta, tipoDeUrl, type RecetaImportada } from '../../shared/parser.js'
 import { supabase } from '../lib/supabase'
 import { useDatos } from '../lib/datos'
@@ -7,9 +7,24 @@ import { useDatos } from '../lib/datos'
 export default function Importar() {
   const nav = useNavigate()
   const [params] = useSearchParams()
+  const loc = useLocation()
+  // Enlace recibido del Atajo de iOS: /importar#<enlace>, /importar?url=<enlace> o ?text=<texto con enlace>
+  const entrante = useMemo(() => {
+    let hash = loc.hash.replace(/^#/, '')
+    try {
+      hash = decodeURIComponent(hash)
+    } catch {
+      /* se usa tal cual */
+    }
+    for (const c of [hash, params.get('url'), params.get('text'), decodeURIComponent(loc.search)]) {
+      const m = c?.match(/https?:\/\/\S+/)
+      if (m) return m[0]
+    }
+    return ''
+  }, [loc.hash, loc.search, params])
   const { recetas } = useDatos()
   const [modo, setModo] = useState<'link' | 'texto'>('link')
-  const [url, setUrl] = useState(params.get('url') ?? params.get('text') ?? '')
+  const [url, setUrl] = useState(entrante)
   const [texto, setTexto] = useState('')
   const [cargando, setCargando] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -41,9 +56,9 @@ export default function Importar() {
 
   // Desde el Atajo de iOS: /importar?url=...
   useEffect(() => {
-    if (!auto.current && (params.get('url') || params.get('text'))) {
+    if (!auto.current && entrante) {
       auto.current = true
-      importarLink(params.get('url') ?? params.get('text') ?? '')
+      importarLink(entrante)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
