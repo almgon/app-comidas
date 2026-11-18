@@ -18,13 +18,12 @@ export default function SelectorSemana({ lunes, onCambiar }: { lunes: string; on
 }
 
 /** Enlaces entre las pantallas de la semana, conservando la semana elegida */
-export function EnlacesSemana({ lunes, actual }: { lunes: string; actual: 'menu' | 'domingo' | 'compra' | 'congelador' | 'desayunos' }) {
+export function EnlacesSemana({ lunes, actual }: { lunes: string; actual: 'menu' | 'domingo' | 'compra' | 'congelador' }) {
   const q = `?semana=${lunes}`
   const enlaces = [
     { k: 'menu', to: `/${q}`, t: '🗓️ Menú' },
     { k: 'domingo', to: `/domingo${q}`, t: '🍲 Domingo' },
     { k: 'congelador', to: `/congelador${q}`, t: '❄️ Congelador' },
-    { k: 'desayunos', to: `/desayunos${q}`, t: '☕ Desayunos' },
   ]
   return (
     <div className="enlaces-semana">

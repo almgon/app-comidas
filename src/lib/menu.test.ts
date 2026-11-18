@@ -27,8 +27,7 @@ const comensales = [
 
 function ctxCon(recetas: Receta[]): ContextoMenu {
   return {
-    lunes: LUNES, recetas, proteina: new Map(recetas.map((r) => [r.id, 35])), comensales,
-    proteinaDesayuno: new Map([['a', [38, 15]], ['b', [45, 18]]]), congelados: [], raciones: 2.25,
+    lunes: LUNES, recetas, proteina: new Map(recetas.map((r) => [r.id, 35])), comensales, congelados: [], raciones: 2.25,
   }
 }
 
@@ -61,8 +60,10 @@ describe('generador', () => {
   it('cumple las reglas duras con un recetario variado', () => {
     const rs = variado()
     const ctx = ctxCon(rs)
-    const { entradas } = generarMenu(ctx, [], { rnd: semilla(1) })
-    expect(entradas).toHaveLength(14)
+    const { entradas: todas } = generarMenu(ctx, [], { rnd: semilla(1) })
+    expect(todas).toHaveLength(21)
+    expect(todas.filter((e) => e.momento === 'desayuno').every((e) => e.recipe_id === null)).toBe(true) // no hay recetas de desayuno: vacíos
+    const entradas = todas.filter((e) => e.momento !== 'desayuno')
     const mapa = new Map(rs.map((r) => [r.id, r]))
     for (const f of fechasSemana(LUNES)) {
       const [c, d] = entradas.filter((e) => e.fecha === f)
@@ -82,6 +83,28 @@ describe('generador', () => {
     expect(ind.pescadoAzul).toBeGreaterThanOrEqual(1)
     expect(ind.carneRoja).toBeLessThanOrEqual(2)
     expect(objetivos(ind).find((o) => o.clave === 'legumbre')!.estado).toBe('verde')
+  })
+
+  it('elige desayunos entre las recetas de desayuno y cuenta su proteína', () => {
+    const rs = [...variado(), receta('Overnight oats', null, { tipo_comida: 'desayuno' }), receta('Tostadas con tomate', null, { tipo_comida: 'desayuno' })]
+    const ctx = ctxCon(rs)
+    const { entradas } = generarMenu(ctx, [], { rnd: semilla(7) })
+    const des = entradas.filter((e) => e.momento === 'desayuno')
+    expect(des).toHaveLength(7)
+    expect(des.every((e) => ['Overnight oats', 'Tostadas con tomate'].includes(rs.find((r) => r.id === e.recipe_id)!.titulo))).toBe(true)
+    expect(new Set(des.map((e) => e.recipe_id)).size).toBe(2) // algo de variedad
+    expect(entradas.filter((e) => e.momento !== 'desayuno').every((e) => rs.find((r) => r.id === e.recipe_id)!.tipo_comida !== 'desayuno')).toBe(true)
+    const ind = indicadores(entradas, ctx)
+    expect(ind.proteinaDia.get('a')![0]).toBeCloseTo(35 * 3) // desayuno + comida + cena
+    // «otro desayuno» solo cambia ese hueco
+    const { entradas: otra } = generarMenu(ctx, entradas, { soloHueco: { fecha: LUNES, momento: 'desayuno' }, rnd: semilla(8) })
+    expect(otra.filter((e) => e.momento !== 'desayuno').map((e) => e.recipe_id)).toEqual(entradas.filter((e) => e.momento !== 'desayuno').map((e) => e.recipe_id))
+  })
+
+  it('explica por qué no hay recetas de comida o cena', () => {
+    const av = avisosRecetario([receta('Overnight oats', null, { tipo_comida: 'desayuno' })]).join(' ')
+    expect(av).toMatch(/1 receta, pero 1 de desayuno/)
+    expect(avisosRecetario([receta('Boloñesa', null, { es_base: true })]).join(' ')).toMatch(/preparación base/)
   })
 
   it('respeta los platos fijados y los huecos libres', () => {
@@ -122,7 +145,9 @@ describe('generador', () => {
     const ctx = ctxCon(rs)
     const { entradas } = generarMenu(ctx, [], { rnd: semilla(5) })
     const { entradas: nuevas } = generarMenu(ctx, entradas, { soloHueco: { fecha: '2026-11-26', momento: 'comida' }, rnd: semilla(6) })
-    const distintas = nuevas.filter((e, i) => e.recipe_id !== entradas[i].recipe_id || e.origen !== entradas[i].origen)
+    const clave = (e: EntradaPlan) => `${e.fecha}|${e.momento}`
+    const antes = new Map(entradas.map((e) => [clave(e), e]))
+    const distintas = nuevas.filter((e) => e.recipe_id !== antes.get(clave(e))?.recipe_id || e.origen !== antes.get(clave(e))?.origen)
     expect(distintas.every((e) => e.fecha === '2026-11-26' && e.momento === 'comida')).toBe(true)
   })
 })
@@ -179,7 +204,7 @@ describe('batch y compra', () => {
   it('agrupa, convierte a envases, separa la despensa y no cuenta lo congelado', () => {
     const conCongelado = [...entradas, { ...e('2026-11-25', 'comida', polloR, 'congelador'), freezer_item_id: 'x' }]
     const batch = sesionDomingo(LUNES, conCongelado, recetas, {}, [])
-    const lista = calcularCompra({ lunes: LUNES, entradas: conCongelado, recetas, ingredientes, batch, desayunos: [], comensales, envases: new Map() })
+    const lista = calcularCompra({ lunes: LUNES, entradas: conCongelado, recetas, ingredientes, batch, comensales, envases: new Map() })
     const p = lista.find((x) => x.ingredient_id === 'i-pollo')!
     // batch del lunes: 2,25 rac. → receta de 2, congelable → se hacen 4 rac. = 600 g; el del congelador no cuenta
     expect(p.cantidad).toBe(600)
@@ -194,14 +219,16 @@ describe('batch y compra', () => {
     expect(lista.findIndex((x) => x.categoria === 'Fruta')).toBeLessThan(lista.findIndex((x) => x.categoria === 'Carne'))
   })
 
-  it('cuenta los desayunos de cada persona', () => {
+  it('suma los alimentos sueltos de cualquier hueco', () => {
     const avena = ing('i-avena', 'Copos de avena', { envase_cantidad: 500, envase_nombre: 'paquete' })
+    const des = (fecha: string): EntradaPlan => ({ fecha, momento: 'desayuno', recipe_id: null, raciones: 2.25, origen: 'fresco', freezer_item_id: null, fijado: false, nota: null, extras: [{ ingredient_id: 'i-avena', cantidad: 110 }] })
     const lista = calcularCompra({
-      lunes: LUNES, entradas: [], recetas, ingredientes: new Map([['i-avena', avena]]), batch: [], comensales, envases: new Map(), fruta: false,
-      desayunos: [{ id: 'd', dias: 'lv', ingredient_id: 'i-avena', unidad: 'g', cantidades: { a: 50, b: 60 }, orden: 0 }],
+      lunes: LUNES, entradas: ['2026-11-23', '2026-11-24', '2026-11-25', '2026-11-26', '2026-11-27'].map(des), recetas, ingredientes: new Map([['i-avena', avena]]),
+      batch: [], comensales, envases: new Map(), fruta: false,
     })
-    expect(lista[0].cantidad).toBe(550) // (50 + 60) × 5
+    expect(lista[0].cantidad).toBe(550)
     expect(lista[0].detalle).toBe('2 paquetes (500 g) · sobran 450 g')
+    expect(lista[0].origen).toBe('Desayunos')
   })
 })
 

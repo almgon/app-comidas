@@ -106,7 +106,7 @@ export const aptaCenaRapida = (r: Pick<Receta, 't_prep_min' | 't_coccion_min'>) 
 // =========================================================
 // Fase 2: menú, desayunos, congelador y compra
 // =========================================================
-export type Momento = 'comida' | 'cena'
+export type Momento = 'desayuno' | 'comida' | 'cena'
 export type Origen = 'fresco' | 'batch' | 'congelador' | 'libre'
 
 export const ORIGENES: Record<Origen, { etiqueta: string; emoji: string }> = {
@@ -126,6 +126,13 @@ export interface EntradaPlan {
   freezer_item_id: string | null
   fijado: boolean
   nota: string | null
+  /** alimentos sueltos que se añaden a ese hueco (cantidad total para el hogar, en la unidad base) */
+  extras?: Extra[]
+}
+
+export interface Extra {
+  ingredient_id: string
+  cantidad: number | null
 }
 
 export interface EstadoBatch {

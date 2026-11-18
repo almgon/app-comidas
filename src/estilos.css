@@ -288,3 +288,8 @@ input.mini-num { width: 70px; padding: .35rem .4rem; }
 .tienda-producto.t-mercadona h3 { color: #0b7a3e; }
 .tienda-producto.t-dia h3 { color: #d71920; }
 .tienda-producto p { margin: 0; }
+.extras { background: none; border: none; padding: 0; text-align: left; color: var(--suave); font-size: .85rem; cursor: pointer; }
+.sueltos { border-top: 1px solid var(--borde); padding-top: .6rem; display: flex; flex-direction: column; gap: .4rem; }
+.sueltos h3 { margin: 0; font-size: 1rem; }
+.sueltos p { margin: 0; }
+.nombre-suelto { flex: 1; }

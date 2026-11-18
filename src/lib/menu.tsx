@@ -7,7 +7,6 @@ import { comensalesDe } from './tipos'
 import type { Necesidad } from './compra'
 import { claveArticulo } from './compra'
 import type { ItemBatch } from './batch'
-import { normalizar } from '../../shared/parser.js'
 
 function chk<T>(r: { data: T; error: any }): T {
   if (r.error) throw new Error(r.error.message)
@@ -21,18 +20,6 @@ const leer = <T,>(k: string): T | null => {
     return null
   }
 }
-
-// Desayunos iniciales por persona (documento de requisitos): [factor ≈ 1, factor ≈ 1,25]
-const DESAYUNOS_INICIALES: { dias: 'lv' | 'fd'; nombre: string; unidad: string; cant: [number, number] }[] = [
-  { dias: 'lv', nombre: 'Café', unidad: 'g', cant: [8, 8] },
-  { dias: 'lv', nombre: 'Copos de avena', unidad: 'g', cant: [50, 60] },
-  { dias: 'lv', nombre: 'Proteína en polvo (whey)', unidad: 'g', cant: [30, 35] },
-  { dias: 'lv', nombre: 'Cacao puro en polvo', unidad: 'g', cant: [10, 10] },
-  { dias: 'lv', nombre: 'Semillas de chía', unidad: 'g', cant: [10, 15] },
-  { dias: 'lv', nombre: 'Leche semidesnatada', unidad: 'ml', cant: [200, 250] },
-  { dias: 'fd', nombre: 'Café', unidad: 'g', cant: [8, 8] },
-  { dias: 'fd', nombre: 'Pan', unidad: 'g', cant: [80, 100] },
-]
 
 // =========================================================
 // Hogar: desayunos, congelador, envases
@@ -67,7 +54,7 @@ export const aProducto = (p: any): ProductoTienda => ({
 })
 
 export function MenuProvider({ children }: { children: ReactNode }) {
-  const { hogar, miembros, ingredientes, recargar: recargarDatos } = useDatos()
+  const { hogar } = useDatos()
   const hogarId = hogar?.id
   const clave = `comidas-menu-${hogarId}`
   const cache = useMemo(() => (hogarId ? leer<any>(clave) : null), [hogarId, clave])
@@ -105,47 +92,6 @@ export function MenuProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     recargarMenu()
   }, [recargarMenu])
-
-  // Desayunos por defecto, una sola vez por hogar
-  const iniciando = useRef(false)
-  useEffect(() => {
-    if (!hogar || hogar.desayunos_iniciados !== false || iniciando.current || !miembros.length || !ingredientes.length) return
-    iniciando.current = true
-    ;(async () => {
-      const porNombre = new Map(ingredientes.filter((i) => !i.household_id).map((i) => [normalizar(i.nombre), i]))
-      const filas = DESAYUNOS_INICIALES.flatMap((d, orden) => {
-        const ing = porNombre.get(normalizar(d.nombre))
-        if (!ing) return []
-        const cantidades = Object.fromEntries(miembros.map((m) => [m.id, Number(m.factor_racion) >= 1.15 ? d.cant[1] : d.cant[0]]))
-        return [{ dias: d.dias, ingredient_id: ing.id, unidad: d.unidad, cantidades, orden }]
-      })
-      try {
-        if (filas.length) chk(await supabase.from('desayunos').upsert(filas, { onConflict: 'household_id,dias,ingredient_id', ignoreDuplicates: true }))
-        chk(await supabase.from('households').update({ desayunos_iniciados: true }).eq('id', hogar.id))
-        await Promise.all([recargarMenu(), recargarDatos()])
-      } catch (e) {
-        console.warn('No se pudieron crear los desayunos', e)
-        iniciando.current = false
-      }
-    })()
-  }, [hogar, miembros, ingredientes, recargarMenu, recargarDatos])
-
-  // Si se une alguien nuevo al hogar, se le ponen las mismas cantidades que al primero (ajustadas por factor)
-  useEffect(() => {
-    if (!desayunos.length || miembros.length < 2) return
-    const faltan = desayunos.filter((l) => miembros.some((m) => l.cantidades[m.id] == null))
-    if (!faltan.length) return
-    ;(async () => {
-      for (const l of faltan) {
-        const ref = miembros.find((m) => l.cantidades[m.id] != null)
-        const base = ref ? Number(l.cantidades[ref.id]) / (Number(ref.factor_racion) || 1) : 0
-        const cantidades = { ...l.cantidades }
-        for (const m of miembros) if (cantidades[m.id] == null) cantidades[m.id] = Math.round(base * (Number(m.factor_racion) || 1))
-        await supabase.from('desayunos').update({ cantidades }).eq('id', l.id)
-      }
-      recargarMenu()
-    })()
-  }, [desayunos, miembros, recargarMenu])
 
   // Tiempo real
   const temporizador = useRef<number | undefined>(undefined)
@@ -267,7 +213,7 @@ export function useComensales() {
 // =========================================================
 const aEntrada = (e: any): EntradaPlan => ({
   id: e.id, fecha: e.fecha, momento: e.momento, recipe_id: e.recipe_id, raciones: Number(e.raciones), origen: e.origen,
-  freezer_item_id: e.freezer_item_id, fijado: e.fijado, nota: e.nota,
+  freezer_item_id: e.freezer_item_id, fijado: e.fijado, nota: e.nota, extras: Array.isArray(e.extras) ? e.extras : [],
 })
 const aArticulo = (a: any): ArticuloCompra => ({ ...a, cantidad: num(a.cantidad) })
 const PENDIENTES = 'comidas-compra-pendiente'
@@ -369,7 +315,7 @@ export function useSemana(lunes: string) {
   const fila = useCallback(
     (e: EntradaPlan) => ({
       plan_id: planId, fecha: e.fecha, momento: e.momento, recipe_id: e.recipe_id, raciones: e.raciones, origen: e.origen,
-      freezer_item_id: e.origen === 'congelador' ? e.freezer_item_id : null, fijado: e.fijado, nota: e.nota,
+      freezer_item_id: e.origen === 'congelador' ? e.freezer_item_id : null, fijado: e.fijado, nota: e.nota, extras: e.extras ?? [],
     }),
     [planId],
   )
@@ -383,7 +329,11 @@ export function useSemana(lunes: string) {
         return { ...s, entradas: [...m.values()] }
       })
       try {
-        if (entradas.length) chk(await supabase.from('plan_entries').upsert(entradas.map(fila), { onConflict: 'plan_id,fecha,momento' }))
+        if (entradas.length) {
+          const r = await supabase.from('plan_entries').upsert(entradas.map(fila), { onConflict: 'plan_id,fecha,momento' })
+          if (r.error && /extras|momento_check|schema cache/i.test(r.error.message)) throw new Error('Falta ejecutar la migración 007 en Supabase (desayunos en el menú). Mira la guía.')
+          chk(r)
+        }
       } finally {
         await Promise.all([recargar(), recargarMenu()])
       }

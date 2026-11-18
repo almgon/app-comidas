@@ -15,7 +15,7 @@ import { TIENDAS, type Tienda } from '../lib/tipos'
 export default function Compra() {
   const [lunes, setLunes] = useSemanaElegida()
   const { mapaRecetas, mapaIngredientes, miembros, sesion, hogar } = useDatos()
-  const { desayunos, congelados, envases, guardarEnvase, enlaces } = useMenu()
+  const { congelados, envases, guardarEnvase, enlaces } = useMenu()
   const comensales = useComensales()
   const semana = useSemana(lunes)
   const [ocultar, setOcultar] = useState(false)
@@ -29,8 +29,8 @@ export default function Compra() {
 
   const necesidades = useMemo(() => {
     const batch = sesionDomingo(lunes, semana.entradas, mapaRecetas, semana.plan?.batch ?? {}, congelados)
-    return calcularCompra({ lunes, entradas: semana.entradas, recetas: mapaRecetas, ingredientes: mapaIngredientes, batch, desayunos, comensales, envases })
-  }, [lunes, semana.entradas, semana.plan, mapaRecetas, mapaIngredientes, congelados, desayunos, comensales, envases])
+    return calcularCompra({ lunes, entradas: semana.entradas, recetas: mapaRecetas, ingredientes: mapaIngredientes, batch, comensales, envases })
+  }, [lunes, semana.entradas, semana.plan, mapaRecetas, mapaIngredientes, congelados, comensales, envases])
 
   // ¿La lista guardada coincide con lo que pide el menú ahora?
   const desfasada = useMemo(() => {
@@ -132,7 +132,7 @@ export default function Compra() {
         <div className="vacio">
           {semana.entradas.some((e) => e.recipe_id) ? (
             <>
-              <p>Saca la lista de la compra del menú de esta semana: desayunos, platos, sesión del domingo y fruta, sin lo que hay en el congelador.</p>
+              <p>Saca la lista de la compra del menú de esta semana: desayunos, comidas, cenas, sesión del domingo, alimentos sueltos y fruta, sin lo que hay en el congelador.</p>
               <button className="boton primario" onClick={generar} disabled={generando}>{generando ? 'Calculando…' : '🛒 Crear lista desde el menú'}</button>
             </>
           ) : (

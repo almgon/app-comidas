@@ -63,7 +63,6 @@ Si ya tenías la app funcionando, solo hay un paso:
 
 Primeros pasos en la app:
 - **Ajustes**: comprobad que cada uno tiene su peso y factor (Alberto 1, pareja 1,25).
-- **Menú → ☕ Desayunos**: se crean solos con las cantidades acordadas; cambiadlas si queréis.
 - **Recetas**: para que el generador funcione bien, cada receta de comida/cena necesita *tipo* (comida, cena o ambas), *proteína principal*, *tiempos* (para saber si vale como cena de entre semana) y, si se puede, *congelable* y *días en nevera*. El menú avisa de lo que falta.
 - **Menú → ✨ Proponer semana**. Fija (📌) lo que quieras mantener y vuelve a proponer; 🎲 cambia un solo plato; ✏️ para elegirlo a mano o marcar «comemos fuera».
 - **🍲 Domingo**: lo que hay que cocinar, cuánto y qué va a la nevera o al congelador. Al terminar, lo que sobra se guarda en **❄️ Congelador**.
@@ -82,3 +81,10 @@ Primeros pasos en la app:
 5. **En la app** (pestaña Compra): toca 💶 en cada producto para enlazarlo con su producto de Mercadona (buscador) y de Dia.
    - Dia no tiene catálogo abierto: el producto se añade a mano una vez (nombre, envase y precio) y, si pegas el enlace de dia.es, el Action intenta actualizar el precio cada semana. Si Dia lo bloquea, sigue funcionando en modo semimanual: corriges el precio cuando cambie.
    - Con productos de las dos tiendas, la lista muestra el total en cada una y el mixto. Si dividir la compra ahorra 3 € o más (cambia el umbral en Ajustes), aparecen las pestañas Mercadona / Dia.
+
+
+## Desayunos en el menú (migración 007)
+
+1. **Supabase → SQL Editor → New query**: pega [`supabase/migrations/007_desayunos_en_menu.sql`](supabase/migrations/007_desayunos_en_menu.sql) y pulsa **Run**. Sin este paso no se puede guardar el menú con la versión nueva.
+2. Los desayunos ya no son fijos: son recetas con el tipo **«Desayuno»** que el menú elige igual que las comidas y cenas (se pueden fijar 📌, cambiar 🎲 o elegir a mano ✏️).
+3. En cualquier desayuno, comida o cena (✏️) puedes añadir **alimentos sueltos** (fruta, yogur, pan…) con su cantidad para los dos: se suman a la lista de la compra.
