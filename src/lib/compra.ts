@@ -2,6 +2,7 @@
 import { normalizar } from '../../shared/parser.js'
 import type { ItemBatch } from './batch'
 import { aUnidadBase, cantidadCompra, enEnvases, fmtBase } from './cantidades'
+import { racionesDeBase } from './nutricion'
 import type { Comensal, EntradaPlan, Envase, Ingrediente, Receta } from './tipos'
 
 /** Orden de los pasillos (más o menos el recorrido de Mercadona) */
@@ -70,7 +71,7 @@ export function calcularCompra(d: DatosCompra): Necesidad[] {
       if (l.sub_recipe_id) {
         const sub = d.recetas.get(l.sub_recipe_id)
         if (!sub || enBatch.has(sub.id)) continue
-        expandir(sub, (l.cantidad ?? 1) * mult, origen, new Set([...visitadas, r.id]))
+        expandir(sub, (racionesDeBase(l, sub, d.ingredientes, d.recetas) ?? 1) * mult, origen, new Set([...visitadas, r.id]))
         continue
       }
       const ing = l.ingredient_id ? d.ingredientes.get(l.ingredient_id) ?? null : null

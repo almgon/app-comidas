@@ -22,7 +22,10 @@ export default function TarjetaReceta({ receta }: { receta: Receta }) {
           {receta.es_base && <span className="chip base">Base</span>}
           {g && <span className={`chip g-${g.valor}`}>{g.emoji} {g.etiqueta}</span>}
           {t != null && <span className={`chip ${t <= 30 ? 'rapida' : ''}`}>⏱ {t} min</span>}
-          {n.proteina != null && <span className="chip">💪 {fmt(n.proteina)} g/ración</span>}
+          {n.kcal != null && <span className="chip">🔥 {fmt(n.kcal)} kcal</span>}
+          {n.proteina != null && <span className="chip">P {fmt(n.proteina)} g</span>}
+          {n.hidratos != null && <span className="chip">HC {fmt(n.hidratos)} g</span>}
+          {n.grasa != null && <span className="chip">G {fmt(n.grasa)} g</span>}
           {receta.congelable && <span className="chip">❄️</span>}
         </div>
       </div>

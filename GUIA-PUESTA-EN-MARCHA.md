@@ -85,3 +85,12 @@ Primeros pasos en la app:
 1. **Supabase → SQL Editor → New query**: pega [`supabase/migrations/007_desayunos_en_menu.sql`](supabase/migrations/007_desayunos_en_menu.sql) y pulsa **Run**. Sin este paso no se puede guardar el menú con la versión nueva.
 2. Los desayunos ya no son fijos: son recetas con el tipo **«Desayuno»** que el menú elige igual que las comidas y cenas (se pueden fijar 📌, cambiar 🎲 o elegir a mano ✏️).
 3. En cualquier desayuno, comida o cena (✏️) puedes añadir **alimentos sueltos** (fruta, yogur, pan…) con su cantidad para los dos: se suman a la lista de la compra.
+
+## Varias recetas por comida, kcal y macros, productos de Mercadona (migración 008)
+
+1. **Supabase → SQL Editor → New query**: pega [`supabase/migrations/008_varias_recetas_y_macros.sql`](supabase/migrations/008_varias_recetas_y_macros.sql) y pulsa **Run**. No borra nada: los platos que ya hay en el menú quedan como la receta principal de cada hueco. Sin este paso no se puede guardar el menú con la versión nueva.
+2. En el iPhone, cierra la app del todo y vuelve a abrirla (a veces dos veces).
+3. **Ajustes**: comprobad el peso de cada uno. El objetivo de kcal se estima con el peso (32 kcal/kg, para quien entrena 3-4 días a la semana); si sabéis el vuestro, ponedlo a mano. Los hidratos (45-60 %) y la grasa (20-35 %) salen de las kcal.
+4. **Recetas → 🛒 Elegir productos** (o Ajustes → Productos de Mercadona): elige una vez el producto de Mercadona de cada ingrediente que usan vuestras recetas; vale para todas las recetas que lo llevan. En las recetas nuevas, cada ingrediente tiene el botón «🛒 Buscar en Mercadona».
+5. **Menú**: en cada desayuno, comida o cena, «+ Añadir otra receta». Cada día muestra las kcal de cada uno y qué falta o sobra. «✨ Proponer semana» elige los platos para acercarse a vuestros objetivos y, si a un día le faltan kcal, añade otra receta a algún hueco.
+6. **Preparaciones base** (boloñesa, sofrito…): en el editor, «+ Añadir preparación base», en raciones, en gramos o la receta entera. Si la base reduce al cocinarse, pon su «peso de la receta terminada» para que los gramos cuenten bien.

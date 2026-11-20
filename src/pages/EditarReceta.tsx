@@ -4,7 +4,11 @@ import { normalizar, UNIDADES_DISPONIBLES, type RecetaImportada } from '../../sh
 import { useDatos } from '../lib/datos'
 import { mejorSugerencia, sugerencias } from '../lib/emparejar'
 import { subirFoto } from '../lib/fotos'
-import { fmt, gramosDe, nutricionPorRacion } from '../lib/nutricion'
+import { UNIDADES_BASE, esUnidadBase, fmt, gramosDe, nutricionPorRacion, pesoReceta } from '../lib/nutricion'
+import { useMenu } from '../lib/menu'
+import { useUsarProducto } from '../lib/usarProducto'
+import { euros } from '../lib/precios'
+import SelectorProducto from '../components/SelectorProducto'
 import NuevoIngrediente from '../components/NuevoIngrediente'
 import {
   GRUPOS_PROTEICOS,
@@ -41,6 +45,7 @@ interface Formulario {
   valoracion: number | null
   favorita: boolean
   proteina_racion_manual: string
+  peso_total_g: string
   fuente_url: string | null
   fuente_tipo: FuenteTipo
   notas: string
@@ -74,6 +79,7 @@ const VACIO: Formulario = {
   valoracion: null,
   favorita: false,
   proteina_racion_manual: '',
+  peso_total_g: '',
   fuente_url: null,
   fuente_tipo: 'manual',
   notas: '',
@@ -97,6 +103,7 @@ function desdeReceta(r: Receta): Formulario {
     valoracion: r.valoracion,
     favorita: r.favorita,
     proteina_racion_manual: str(r.proteina_racion_manual),
+    peso_total_g: str(r.peso_total_g),
     fuente_url: r.fuente_url,
     fuente_tipo: r.fuente_tipo,
     notas: r.notas ?? '',
@@ -131,7 +138,7 @@ function desdeImportada(r: RecetaImportada, ingredientes: Ingrediente[], bases: 
       return {
         key: clave(),
         cantidad: str(i.cantidad),
-        unidad: s?.tipo === 'base' ? 'racion' : i.unidad ?? '',
+        unidad: s?.tipo === 'base' ? (esUnidadBase(i.unidad) ? i.unidad! : 'racion') : i.unidad ?? '',
         nombre: i.nombre,
         ingredient_id: s?.tipo === 'ingrediente' ? s.id : null,
         sub_recipe_id: s?.tipo === 'base' ? s.id : null,
@@ -192,6 +199,11 @@ export default function EditarReceta() {
   const [subiendo, setSubiendo] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [creandoEn, setCreandoEn] = useState<string | null>(null)
+  const [productoPara, setProductoPara] = useState<string | null>(null)
+  const [eligiendoBase, setEligiendoBase] = useState(false)
+  const [editandoIng, setEditandoIng] = useState<string | null>(null)
+  const { enlaces } = useMenu()
+  const usarProducto = useUsarProducto()
 
   const set = <K extends keyof Formulario>(k: K, v: Formulario[K]) => setF((x) => ({ ...x, [k]: v }))
   const setFila = (key: string, cambios: Partial<Fila>) => setF((x) => ({ ...x, filas: x.filas.map((r) => (r.key === key ? { ...r, ...cambios } : r)) }))
@@ -216,8 +228,8 @@ export default function EditarReceta() {
         r.key !== key
           ? r
           : tipo === 'base'
-            ? { ...r, ...(nombre != null ? { nombre } : {}), ingredient_id: null, sub_recipe_id: idv, unidad: 'racion', cantidad: r.cantidad || '1' }
-            : { ...r, ...(nombre != null ? { nombre } : {}), ingredient_id: idv, sub_recipe_id: null, unidad: r.unidad === 'racion' ? 'g' : r.unidad },
+            ? { ...r, ...(nombre != null ? { nombre } : {}), ingredient_id: null, sub_recipe_id: idv, unidad: r.cantidad && esUnidadBase(r.unidad) ? r.unidad! : 'racion', cantidad: r.cantidad || '1' }
+            : { ...r, ...(nombre != null ? { nombre } : {}), ingredient_id: idv, sub_recipe_id: null, unidad: r.unidad === 'racion' || r.unidad === 'receta' ? 'g' : r.unidad },
       ),
     }))
   }
@@ -241,6 +253,7 @@ export default function EditarReceta() {
     valoracion: f.valoracion,
     favorita: f.favorita,
     proteina_racion_manual: numero(f.proteina_racion_manual),
+    peso_total_g: f.es_base ? numero(f.peso_total_g) : null,
     fuente_url: f.fuente_url,
     fuente_tipo: f.fuente_tipo,
     notas: f.notas || null,
@@ -422,9 +435,13 @@ export default function EditarReceta() {
       <section className="tarjeta">
         <div className="fila espacio">
           <h2>Ingredientes</h2>
-          <span className="suave">
-            💪 {fmt(nut.proteina)} g · {fmt(nut.kcal)} kcal por ración
-          </span>
+          <span className="suave">por ración</span>
+        </div>
+        <div className="macros">
+          <span className="chip">🔥 {fmt(nut.kcal)} kcal</span>
+          <span className="chip">P {fmt(nut.proteina)} g</span>
+          <span className="chip">HC {fmt(nut.hidratos)} g</span>
+          <span className="chip">G {fmt(nut.grasa)} g</span>
         </div>
         <datalist id="lista-ingredientes">
           {bases.map((b) => <option key={b.id} value={b.titulo}>Preparación base</option>)}
@@ -440,9 +457,14 @@ export default function EditarReceta() {
                 <div className="fila">
                   <input className="cant" inputMode="decimal" placeholder="Cant." value={fila.cantidad} onChange={(e) => setFila(fila.key, { cantidad: e.target.value })} />
                   <select className="uni" value={fila.unidad} onChange={(e) => setFila(fila.key, { unidad: e.target.value })}>
-                    <option value="">—</option>
-                    {sub && <option value="racion">raciones</option>}
-                    {UNIDADES_DISPONIBLES.map((u) => <option key={u} value={u}>{u === 'pellizco' ? 'pizca' : u}</option>)}
+                    {sub ? (
+                      UNIDADES_BASE.map((u) => <option key={u.valor} value={u.valor}>{u.etiqueta}</option>)
+                    ) : (
+                      <>
+                        <option value="">—</option>
+                        {UNIDADES_DISPONIBLES.map((u) => <option key={u} value={u}>{u === 'pellizco' ? 'pizca' : u}</option>)}
+                      </>
+                    )}
                   </select>
                   <input className="nombre" list="lista-ingredientes" placeholder="Ingrediente" value={fila.nombre} onChange={(e) => cambiarNombre(fila, e.target.value)} />
                   <div className="mover">
@@ -456,12 +478,34 @@ export default function EditarReceta() {
                 </div>
                 <div className="vinculo">
                   {sub ? (
-                    <span className="ok">↳ Preparación base: {sub.titulo} (cantidad en raciones)</span>
+                    <span className="ok">
+                      ↳ Preparación base: {sub.titulo}
+                      {(() => {
+                        const ns = nutricionPorRacion(sub, mapaIngredientes, mapaRecetas)
+                        const peso = pesoReceta(sub, mapaIngredientes, mapaRecetas)
+                        return (
+                          <span className="suave">
+                            {' '}· {fmt(ns.kcal)} kcal/ración{peso ? ` · ración ≈ ${fmt(peso / (sub.raciones || 1))} g · receta entera ${fmt(sub.raciones, 1)} rac.` : ''}
+                            {fila.unidad === 'g' && !peso && <em className="aviso-mini"> · la base no tiene peso: pon su peso final o usa raciones</em>}
+                          </span>
+                        )
+                      })()}
+                    </span>
                   ) : ing ? (
                     <span className="ok">
-                      ✓ {ing.nombre} · {fmt(ing.proteina_100, 1)} g prot/100 {ing.unidad_base === 'ml' ? 'ml' : 'g'}
+                      ✓ {ing.nombre} · {ing.kcal_100 != null ? `${fmt(ing.kcal_100)} kcal · ` : ''}{fmt(ing.proteina_100, 1)} g prot/100 {ing.unidad_base === 'ml' ? 'ml' : 'g'}
+                      {ing.kcal_100 == null && ing.proteina_100 == null && <em className="aviso-mini"> · sin datos nutricionales</em>}
                       {fila.unidad && ['ud', 'lata', 'bote', 'sobre', 'paquete'].includes(fila.unidad) && !ing.peso_unidad_g && <em className="aviso-mini"> · falta el peso por unidad</em>}
+                      <button type="button" className="enlace" onClick={() => setEditandoIng(editandoIng === fila.key ? null : fila.key)}>datos</button>
                       <button type="button" className="enlace" onClick={() => setFila(fila.key, { ingredient_id: null })}>cambiar</button>
+                      <br />
+                      {enlaces.get(ing.id)?.mercadona ? (
+                        <button type="button" className="chip mercadona" onClick={() => setProductoPara(fila.key)} title="Cambiar producto">
+                          🛒 {enlaces.get(ing.id)!.mercadona!.nombre} · {euros(enlaces.get(ing.id)!.mercadona!.precio)}
+                        </button>
+                      ) : (
+                        <button type="button" className="chip sugerencia" onClick={() => setProductoPara(fila.key)}>🛒 Elegir producto de Mercadona</button>
+                      )}
                     </span>
                   ) : fila.nombre.trim() ? (
                     <span>
@@ -471,12 +515,40 @@ export default function EditarReceta() {
                           {s.tipo === 'base' ? '↳ ' : ''}{s.nombre}
                         </button>
                       ))}
+                      <button type="button" className="chip mercadona" onClick={() => setProductoPara(fila.key)}>🛒 Buscar en Mercadona</button>
                       <button type="button" className="enlace" onClick={() => setCreandoEn(creandoEn === fila.key ? null : fila.key)}>
                         + crear en el catálogo
                       </button>
                     </span>
                   ) : null}
                 </div>
+                {editandoIng === fila.key && ing && (
+                  <NuevoIngrediente
+                    inicial={ing}
+                    onCancelar={() => setEditandoIng(null)}
+                    onGuardar={async (datos) => {
+                      await guardarIngrediente({ ...datos, id: ing.id })
+                      setEditandoIng(null)
+                    }}
+                  />
+                )}
+                {productoPara === fila.key && (
+                  <SelectorProducto
+                    inicial={ing && !enlaces.get(ing.id)?.mercadona ? ing.nombre : fila.nombre}
+                    titulo={fila.nombre || 'Producto de Mercadona'}
+                    nota={
+                      ing && !enlaces.get(ing.id)?.mercadona
+                        ? `Se enlaza a «${ing.nombre}» y se usará en todas las recetas que lo llevan.`
+                        : 'Si el producto es nuevo, se añade al catálogo con las kcal y macros del alimento más parecido (las puedes corregir en «datos»).'
+                    }
+                    onCerrar={() => setProductoPara(null)}
+                    onElegir={async (p) => {
+                      const { ingId } = await usarProducto(p, fila.ingredient_id)
+                      setF((x) => ({ ...x, filas: x.filas.map((r) => (r.key === fila.key ? { ...r, nombre: r.nombre.trim() || p.nombre, ingredient_id: ingId, sub_recipe_id: null } : r)) }))
+                      setProductoPara(null)
+                    }}
+                  />
+                )}
                 {creandoEn === fila.key && (
                   <NuevoIngrediente
                     nombre={fila.nombre}
@@ -496,9 +568,48 @@ export default function EditarReceta() {
             )
           })}
         </div>
-        <button type="button" className="boton" onClick={() => set('filas', [...f.filas, { key: clave(), cantidad: '', unidad: 'g', nombre: '', ingredient_id: null, sub_recipe_id: null }])}>
-          + Añadir ingrediente
-        </button>
+        <div className="fila" style={{ flexWrap: 'wrap' }}>
+          <button type="button" className="boton" onClick={() => set('filas', [...f.filas, { key: clave(), cantidad: '', unidad: 'g', nombre: '', ingredient_id: null, sub_recipe_id: null }])}>
+            + Añadir ingrediente
+          </button>
+          {bases.length > 0 && (
+            <button type="button" className="boton" onClick={() => setEligiendoBase(!eligiendoBase)}>
+              + Añadir preparación base
+            </button>
+          )}
+        </div>
+        {eligiendoBase && (
+          <div className="chips margen-arriba">
+            {bases.map((b) => (
+              <button
+                type="button"
+                key={b.id}
+                className="chip sugerencia"
+                onClick={() => {
+                  set('filas', [...f.filas, { key: clave(), cantidad: '1', unidad: 'racion', nombre: b.titulo, ingredient_id: null, sub_recipe_id: b.id }])
+                  setEligiendoBase(false)
+                }}
+              >
+                🥣 {b.titulo}
+              </button>
+            ))}
+          </div>
+        )}
+        {f.es_base && (
+          <label className="margen-arriba">
+            Peso de la receta terminada en g (opcional)
+            <input
+              inputMode="decimal"
+              placeholder={(() => {
+                const p = pesoReceta({ ...vistaPrevia, peso_total_g: null }, mapaIngredientes, mapaRecetas)
+                return p ? `Suma de ingredientes: ${fmt(p)} g` : 'g'
+              })()}
+              value={f.peso_total_g}
+              onChange={(e) => set('peso_total_g', e.target.value)}
+            />
+            <span className="suave">Sirve para usar esta base en gramos en otras recetas («200 g de boloñesa»). Si la dejas vacía se usa la suma de los ingredientes.</span>
+          </label>
+        )}
         <label className="margen-arriba">
           Proteína por ración a mano (opcional, sustituye al cálculo)
           <input inputMode="decimal" placeholder={nut.proteina != null ? `Calculada: ${fmt(nut.proteina)} g` : 'g'} value={f.proteina_racion_manual} onChange={(e) => set('proteina_racion_manual', e.target.value)} />

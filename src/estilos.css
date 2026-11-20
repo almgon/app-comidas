@@ -291,3 +291,35 @@ input.mini-num { width: 70px; padding: .35rem .4rem; }
 .sueltos h3 { margin: 0; font-size: 1rem; }
 .sueltos p { margin: 0; }
 .nombre-suelto { flex: 1; }
+
+/* Varias recetas por hueco y kcal/macros del día */
+.plato-linea { display: flex; flex-direction: column; gap: .3rem; }
+.anadida { display: flex; flex-direction: column; gap: .2rem; padding-top: .35rem; border-top: 1px dashed var(--borde); }
+.anadida .plato-linea { min-width: 0; }
+.anadida .acciones-hueco { margin-left: -.3rem; }
+.anadida .titulo-plato::before { content: '+ '; color: var(--suave); }
+.anadida.fijado .titulo-plato::before { content: '📌 '; font-size: .8rem; }
+.anadir-receta { align-self: flex-start; font-size: .85rem; }
+.sin-boton { background: none; border: none; padding: 0; cursor: pointer; color: inherit; font: inherit; }
+.resumen-dia { display: flex; flex-direction: column; gap: .3rem; margin: .2rem 0 .4rem; font-size: .82rem; }
+.resumen-persona .chips { display: inline-flex; margin-left: .3rem; }
+.chip.falta { background: #e8f0fd; border-color: #b9cdf3; color: #1f4b99; }
+.chip.sobra { background: #fdecea; border-color: #f2c1ba; color: #8a2318; }
+.chip.ok { background: #dff3e6; border-color: #b5e0c4; color: #1d6b3d; }
+@media (prefers-color-scheme: dark) {
+  .chip.falta { background: #1c2a44; color: #b9cdf3; border-color: #2c3f63; }
+  .chip.sobra { background: #3d1d19; color: #f2b4ab; border-color: #5a2a24; }
+  .chip.ok { background: #1f3a2a; color: #a6e0bb; border-color: #2d5a3d; }
+}
+.macros { display: flex; flex-wrap: wrap; gap: .3rem; }
+.pestanas-recetas { display: flex; gap: .3rem; overflow-x: auto; margin: .3rem 0 .6rem; padding-bottom: .1rem; }
+.pestanas-recetas button { flex-shrink: 0; border: 1px solid var(--borde); background: none; color: inherit; border-radius: 999px; padding: .35rem .75rem; font: inherit; font-size: .85rem; cursor: pointer; }
+.pestanas-recetas button.on { background: var(--verde); border-color: transparent; color: #fff; }
+.pestanas-recetas small { opacity: .75; margin-left: .2rem; }
+.seccion-recetas { margin: .8rem 0 .3rem; font-size: 1rem; }
+.producto-linea { font-size: .8rem; }
+.chip.mercadona { background: #e6f4ec; border-color: #b5e0c4; color: #1d6b3d; }
+@media (prefers-color-scheme: dark) { .chip.mercadona { background: #1f3a2a; color: #a6e0bb; border-color: #2d5a3d; } }
+.lista-simple { list-style: none; padding: 0; margin: .4rem 0 0; display: flex; flex-direction: column; gap: .55rem; }
+.lista-simple li { padding-bottom: .5rem; border-bottom: 1px solid var(--borde); gap: .5rem; }
+.lista-simple li:last-child { border-bottom: none; }

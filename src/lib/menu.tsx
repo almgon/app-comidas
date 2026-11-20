@@ -212,7 +212,7 @@ export function useComensales() {
 // Una semana: menú + lista de la compra
 // =========================================================
 const aEntrada = (e: any): EntradaPlan => ({
-  id: e.id, fecha: e.fecha, momento: e.momento, recipe_id: e.recipe_id, raciones: Number(e.raciones), origen: e.origen,
+  id: e.id, fecha: e.fecha, momento: e.momento, orden: Number(e.orden ?? 0), recipe_id: e.recipe_id, raciones: Number(e.raciones), origen: e.origen,
   freezer_item_id: e.freezer_item_id, fijado: e.fijado, nota: e.nota, extras: Array.isArray(e.extras) ? e.extras : [],
 })
 const aArticulo = (a: any): ArticuloCompra => ({ ...a, cantidad: num(a.cantidad) })
@@ -314,23 +314,31 @@ export function useSemana(lunes: string) {
   // ---------- Acciones del menú ----------
   const fila = useCallback(
     (e: EntradaPlan) => ({
-      plan_id: planId, fecha: e.fecha, momento: e.momento, recipe_id: e.recipe_id, raciones: e.raciones, origen: e.origen,
+      plan_id: planId, fecha: e.fecha, momento: e.momento, orden: e.orden ?? 0, recipe_id: e.recipe_id, raciones: e.raciones, origen: e.origen,
       freezer_item_id: e.origen === 'congelador' ? e.freezer_item_id : null, fijado: e.fijado, nota: e.nota, extras: e.extras ?? [],
     }),
     [planId],
   )
 
   const guardarEntradas = useCallback(
-    async (entradas: EntradaPlan[]) => {
+    async (entradas: EntradaPlan[], borrar?: EntradaPlan[]) => {
       if (!planId) return
+      const k = (e: EntradaPlan) => `${e.fecha}|${e.momento}|${e.orden ?? 0}`
+      const quitar = new Set((borrar ?? []).map(k))
       setEstado((s) => {
-        const m = new Map(s.entradas.map((e) => [`${e.fecha}|${e.momento}`, e]))
-        for (const e of entradas) m.set(`${e.fecha}|${e.momento}`, e)
+        const m = new Map(s.entradas.filter((e) => !quitar.has(k(e))).map((e) => [k(e), e]))
+        for (const e of entradas) m.set(k(e), e)
         return { ...s, entradas: [...m.values()] }
       })
       try {
+        // Recetas añadidas que ya no están (p. ej. al volver a proponer la semana)
+        for (const e of borrar ?? []) {
+          if (e.id) chk(await supabase.from('plan_entries').delete().eq('id', e.id))
+          else chk(await supabase.from('plan_entries').delete().eq('plan_id', planId).eq('fecha', e.fecha).eq('momento', e.momento).eq('orden', e.orden ?? 0))
+        }
         if (entradas.length) {
-          const r = await supabase.from('plan_entries').upsert(entradas.map(fila), { onConflict: 'plan_id,fecha,momento' })
+          const r = await supabase.from('plan_entries').upsert(entradas.map(fila), { onConflict: 'plan_id,fecha,momento,orden' })
+          if (r.error && /orden|no unique|ON CONFLICT/i.test(r.error.message)) throw new Error('Falta ejecutar la migración 008 en Supabase (varias recetas por comida). Mira la guía.')
           if (r.error && /extras|momento_check|schema cache/i.test(r.error.message)) throw new Error('Falta ejecutar la migración 007 en Supabase (desayunos en el menú). Mira la guía.')
           chk(r)
         }

@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useDatos } from '../lib/datos'
-import { fmt, nutricionPorRacion } from '../lib/nutricion'
+import { fmt, nutricionPorRacion, pesoReceta } from '../lib/nutricion'
+import { useMenu } from '../lib/menu'
 import { aptaCenaRapida, etiquetaGrupo, etiquetaTipo, tiempoTotal } from '../lib/tipos'
 
 const FUENTES: Record<string, string> = { web: 'Web', instagram: 'Instagram', tiktok: 'TikTok', texto: 'Texto pegado', manual: 'Manual' }
@@ -16,7 +17,7 @@ function fmtCantidad(c: number | null, factor: number) {
   return fmt(v, v < 10 ? 1 : 0)
 }
 
-const NOMBRE_UNIDAD: Record<string, string> = { ud: '', racion: 'rac.', pellizco: 'pizca', chorrito: 'chorrito', cda: 'cda', cdta: 'cdta' }
+const NOMBRE_UNIDAD: Record<string, string> = { ud: '', racion: 'rac.', receta: 'receta entera de', pellizco: 'pizca', chorrito: 'chorrito', cda: 'cda', cdta: 'cdta' }
 
 export default function RecetaDetalle() {
   const { id } = useParams()
@@ -25,6 +26,7 @@ export default function RecetaDetalle() {
   const receta = id ? mapaRecetas.get(id) : undefined
   const [raciones, setRaciones] = useState<number | null>(null)
   const [hechos, setHechos] = useState<Set<number>>(new Set())
+  const { enlaces } = useMenu()
 
   if (!receta) return <p className="vacio">No encuentro esta receta. <Link to="/recetas">Volver</Link></p>
 
@@ -33,6 +35,7 @@ export default function RecetaDetalle() {
   const n = nutricionPorRacion(receta, mapaIngredientes, mapaRecetas)
   const g = etiquetaGrupo(receta.grupo_proteico)
   const t = tiempoTotal(receta)
+  const pesoBase = pesoReceta(receta, mapaIngredientes, mapaRecetas)
   const usadaEn = recetas.filter((r) => r.ingredientes.some((l) => l.sub_recipe_id === receta.id))
 
   async function borrar() {
@@ -87,22 +90,36 @@ export default function RecetaDetalle() {
           <b>{t ?? '–'}</b>
           <span>min total</span>
         </div>
-        <div>
-          <b>{fmt(n.proteina)} g</b>
-          <span>proteína/ración</span>
-        </div>
+      </div>
+      <div className="datos-rapidos tarjeta">
         <div>
           <b>{fmt(n.kcal)}</b>
-          <span>kcal/ración</span>
+          <span>kcal</span>
+        </div>
+        <div>
+          <b>{fmt(n.proteina)} g</b>
+          <span>proteína</span>
+        </div>
+        <div>
+          <b>{fmt(n.hidratos)} g</b>
+          <span>hidratos</span>
+        </div>
+        <div>
+          <b>{fmt(n.grasa)} g</b>
+          <span>grasa</span>
         </div>
       </div>
-      {n.proteina != null && miembros.length > 1 && (
+      <p className="suave">Por ración{receta.es_base && pesoBase ? ` (${fmt(pesoBase / receta.raciones)} g; la receta entera pesa unos ${fmt(pesoBase)} g)` : ''}.</p>
+      {n.kcal != null && miembros.length > 1 && (
         <p className="suave">
-          Por persona: {miembros.map((m) => `${m.nombre} ${fmt(n.proteina! * m.factor_racion)} g (×${fmt(m.factor_racion, 2)})`).join(' · ')}
+          Por persona: {miembros.map((m) => `${m.nombre} ${fmt(n.kcal! * m.factor_racion)} kcal · ${fmt((n.proteina ?? 0) * m.factor_racion)} g prot. (×${fmt(m.factor_racion, 2)})`).join(' · ')}
         </p>
       )}
-      {n.sinContar.length > 0 && (
-        <p className="aviso">Proteína aproximada: no se han contado {n.sinContar.join(', ')}. <Link to={`/receta/${receta.id}/editar`}>Vincular ingredientes</Link></p>
+      {(n.sinContar.length > 0 || n.sinDatos.length > 0) && (
+        <p className="aviso">
+          Kcal y macros aproximados:{n.sinContar.length > 0 ? ` no se han contado ${n.sinContar.join(', ')}.` : ''}
+          {n.sinDatos.length > 0 ? ` Faltan los datos nutricionales de ${n.sinDatos.join(', ')}.` : ''} <Link to={`/receta/${receta.id}/editar`}>Revisar ingredientes</Link>
+        </p>
       )}
       {n.manual && <p className="suave">Proteína introducida a mano.</p>}
 
@@ -123,7 +140,16 @@ export default function RecetaDetalle() {
             return (
               <li key={i}>
                 <span className="cantidad">{[cant, uni].filter(Boolean).join(' ')}</span>
-                {sub ? <Link to={`/receta/${sub.id}`}>{l.texto_original || sub.titulo} <span className="chip base">base</span></Link> : <span>{l.texto_original}</span>}
+                {sub ? (
+                  <Link to={`/receta/${sub.id}`}>{l.texto_original || sub.titulo} <span className="chip base">base</span></Link>
+                ) : (
+                  <span>
+                    {l.texto_original}
+                    {l.ingredient_id && enlaces.get(l.ingredient_id)?.mercadona && (
+                      <span className="producto-linea suave"> · 🛒 {enlaces.get(l.ingredient_id)!.mercadona!.nombre}</span>
+                    )}
+                  </span>
+                )}
               </li>
             )
           })}

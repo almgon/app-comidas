@@ -3,20 +3,46 @@ import { Link } from 'react-router-dom'
 import { normalizar } from '../../shared/parser.js'
 import { useDatos } from '../lib/datos'
 import TarjetaReceta from '../components/TarjetaReceta'
-import { GRUPOS_PROTEICOS, TIPOS_COMIDA, tiempoTotal, type GrupoProteico, type TipoComida } from '../lib/tipos'
+import { GRUPOS_PROTEICOS, tiempoTotal, type GrupoProteico, type Receta } from '../lib/tipos'
+import { useMenu } from '../lib/menu'
 
 type Orden = 'titulo' | 'reciente' | 'valoracion' | 'tiempo'
+type Apartado = 'todas' | 'desayuno' | 'comida' | 'cena' | 'base'
+
+const APARTADOS: { valor: Apartado; etiqueta: string }[] = [
+  { valor: 'todas', etiqueta: 'Todas' },
+  { valor: 'desayuno', etiqueta: '☕ Desayunos' },
+  { valor: 'comida', etiqueta: '🍽️ Comidas' },
+  { valor: 'cena', etiqueta: '🌙 Cenas' },
+  { valor: 'base', etiqueta: '🥣 Bases' },
+]
+
+/** En qué apartado sale cada receta (las de «comida o cena» salen en los dos; las bases, aparte) */
+const enApartado = (r: Receta, a: Apartado) =>
+  a === 'todas' ||
+  (a === 'base' ? r.es_base : !r.es_base && (r.tipo_comida === a || (r.tipo_comida === 'ambas' && (a === 'comida' || a === 'cena'))))
+
+const CLAVE_APARTADO = 'comidas-recetas-apartado'
 
 export default function Recetas() {
   const { recetas, etiquetas, mapaIngredientes } = useDatos()
+  const { enlaces } = useMenu()
+  const sinProducto = useMemo(() => {
+    const ids = new Set<string>()
+    for (const r of recetas) for (const l of r.ingredientes) if (l.ingredient_id && !enlaces.get(l.ingredient_id)?.mercadona && !mapaIngredientes.get(l.ingredient_id)?.es_despensa) ids.add(l.ingredient_id)
+    return ids.size
+  }, [recetas, enlaces, mapaIngredientes])
   const [q, setQ] = useState('')
   const [verFiltros, setVerFiltros] = useState(false)
-  const [tipo, setTipo] = useState<TipoComida | ''>('')
+  const [apartado, setApartadoE] = useState<Apartado>(() => (localStorage.getItem(CLAVE_APARTADO) as Apartado) || 'todas')
+  const setApartado = (a: Apartado) => {
+    setApartadoE(a)
+    localStorage.setItem(CLAVE_APARTADO, a)
+  }
   const [grupo, setGrupo] = useState<GrupoProteico | ''>('')
   const [tag, setTag] = useState('')
   const [maxMin, setMaxMin] = useState<number | ''>('')
   const [soloFav, setSoloFav] = useState(false)
-  const [bases, setBases] = useState<'todas' | 'si' | 'no'>('todas')
   const [orden, setOrden] = useState<Orden>('titulo')
 
   const filtradas = useMemo(() => {
@@ -29,7 +55,6 @@ export default function Recetas() {
         )
         if (!nq.split(' ').every((p) => texto.includes(p))) return false
       }
-      if (tipo && !(r.tipo_comida === tipo || (r.tipo_comida === 'ambas' && (tipo === 'comida' || tipo === 'cena')))) return false
       if (grupo && r.grupo_proteico !== grupo) return false
       if (tag && !r.etiquetas.includes(tag)) return false
       if (maxMin !== '') {
@@ -37,8 +62,6 @@ export default function Recetas() {
         if (t == null || t > maxMin) return false
       }
       if (soloFav && !r.favorita) return false
-      if (bases === 'si' && !r.es_base) return false
-      if (bases === 'no' && r.es_base) return false
       return true
     })
     const cmp: Record<Orden, (a: (typeof res)[0], b: (typeof res)[0]) => number> = {
@@ -48,9 +71,9 @@ export default function Recetas() {
       tiempo: (a, b) => (tiempoTotal(a) ?? 999) - (tiempoTotal(b) ?? 999),
     }
     return res.sort(cmp[orden])
-  }, [recetas, q, tipo, grupo, tag, maxMin, soloFav, bases, orden, mapaIngredientes])
+  }, [recetas, q, grupo, tag, maxMin, soloFav, orden, mapaIngredientes])
 
-  const nFiltros = [tipo, grupo, tag, maxMin, soloFav ? 'fav' : '', bases !== 'todas' ? bases : ''].filter((x) => x !== '').length
+  const nFiltros = [grupo, tag, maxMin, soloFav ? 'fav' : ''].filter((x) => x !== '').length
 
   return (
     <div>
@@ -65,17 +88,21 @@ export default function Recetas() {
           Filtros{nFiltros ? ` (${nFiltros})` : ''}
         </button>
       </div>
+      <div className="pestanas-recetas" role="tablist">
+        {APARTADOS.map((a) => (
+          <button key={a.valor} role="tab" className={apartado === a.valor ? 'on' : ''} onClick={() => setApartado(a.valor)}>
+            {a.etiqueta}
+            <small>{filtradas.filter((r) => enApartado(r, a.valor)).length}</small>
+          </button>
+        ))}
+      </div>
+      {sinProducto > 0 && (
+        <p className="aviso">
+          🛒 {sinProducto} ingrediente{sinProducto === 1 ? '' : 's'} de tus recetas sin producto de Mercadona. <Link to="/mercadona">Elegir productos</Link>
+        </p>
+      )}
       {verFiltros && (
         <div className="filtros tarjeta">
-          <label>
-            Momento
-            <select value={tipo} onChange={(e) => setTipo(e.target.value as TipoComida | '')}>
-              <option value="">Todos</option>
-              {TIPOS_COMIDA.filter((t) => t.valor !== 'ambas').map((t) => (
-                <option key={t.valor} value={t.valor}>{t.etiqueta}</option>
-              ))}
-            </select>
-          </label>
           <label>
             Proteína principal
             <select value={grupo} onChange={(e) => setGrupo(e.target.value as GrupoProteico | '')}>
@@ -105,14 +132,6 @@ export default function Recetas() {
             </select>
           </label>
           <label>
-            Preparaciones base
-            <select value={bases} onChange={(e) => setBases(e.target.value as 'todas' | 'si' | 'no')}>
-              <option value="todas">Incluir</option>
-              <option value="si">Solo bases</option>
-              <option value="no">Sin bases</option>
-            </select>
-          </label>
-          <label>
             Ordenar
             <select value={orden} onChange={(e) => setOrden(e.target.value as Orden)}>
               <option value="titulo">A-Z</option>
@@ -128,12 +147,10 @@ export default function Recetas() {
             <button
               className="enlace"
               onClick={() => {
-                setTipo('')
                 setGrupo('')
                 setTag('')
                 setMaxMin('')
                 setSoloFav(false)
-                setBases('todas')
               }}
             >
               Quitar filtros
@@ -151,10 +168,24 @@ export default function Recetas() {
         </div>
       ) : (
         <div className="lista">
-          {filtradas.map((r) => (
-            <TarjetaReceta key={r.id} receta={r} />
-          ))}
-          {filtradas.length === 0 && <p className="vacio">Ninguna receta cumple los filtros.</p>}
+          {apartado === 'todas'
+            ? APARTADOS.filter((a) => a.valor !== 'todas').map((a) => {
+                // En «Todas», cada receta una sola vez: comida o cena sale en Comidas
+                const deAqui = filtradas.filter((r) => enApartado(r, a.valor) && !(a.valor === 'cena' && r.tipo_comida === 'ambas'))
+                if (!deAqui.length) return null
+                return (
+                  <div key={a.valor}>
+                    <h2 className="seccion-recetas">{a.valor === 'comida' ? '🍽️ Comidas (y comida o cena)' : a.etiqueta} <span className="suave">{deAqui.length}</span></h2>
+                    {deAqui.map((r) => (
+                      <TarjetaReceta key={r.id} receta={r} />
+                    ))}
+                  </div>
+                )
+              })
+            : filtradas.filter((r) => enApartado(r, apartado)).map((r) => <TarjetaReceta key={r.id} receta={r} />)}
+          {filtradas.filter((r) => enApartado(r, apartado)).length === 0 && (
+            <p className="vacio">{filtradas.length === 0 ? 'Ninguna receta cumple los filtros.' : 'No hay recetas en este apartado.'}</p>
+          )}
         </div>
       )}
     </div>
