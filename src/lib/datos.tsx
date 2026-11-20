@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from './supabase'
-import type { Hogar, Ingrediente, Perfil, Receta, RecetaBorrador } from './tipos'
+import type { GrupoPlato, Hogar, Ingrediente, Perfil, Receta, RecetaBorrador } from './tipos'
 import { esUnidadBase } from './nutricion'
 
 interface Datos {
@@ -22,6 +22,8 @@ interface Datos {
   actualizarReceta: (id: string, cambios: Partial<Pick<Receta, 'favorita' | 'valoracion'>>) => Promise<void>
   guardarIngrediente: (i: Partial<Ingrediente> & { nombre: string }) => Promise<Ingrediente>
   borrarIngrediente: (id: string) => Promise<void>
+  /** grupo del método del plato elegido a mano (null = el que deduce la app) */
+  guardarGrupoPlato: (ingredientId: string, grupo: GrupoPlato | null) => Promise<void>
   guardarPerfil: (cambios: Partial<Pick<Perfil, 'nombre' | 'peso_kg' | 'factor_racion' | 'kcal_objetivo'>>) => Promise<void>
   renombrarHogar: (nombre: string) => Promise<void>
 }
@@ -130,19 +132,22 @@ export function DatosProvider({ children }: { children: ReactNode }) {
         setHogar(null)
         return
       }
-      const [h, m, r, i, t] = await Promise.all([
+      const [h, m, r, i, t, gp] = await Promise.all([
         supabase.from('households').select('*').eq('id', p.household_id).single(),
         supabase.from('profiles').select('*').eq('household_id', p.household_id),
         supabase.from('recipes').select(SELECT_RECETAS).order('titulo'),
         supabase.from('ingredients').select('*').order('nombre'),
         supabase.from('tags').select('nombre').order('nombre'),
+        // llega con la migración 009: si falta, la app deduce los grupos y ya
+        supabase.from('ingredient_grupos').select('ingredient_id, grupo'),
       ])
+      const grupos = new Map<string, GrupoPlato>(gp.error ? [] : (gp.data as any[]).map((x) => [x.ingredient_id, x.grupo]))
       const datos = {
         perfil: p,
         hogar: chk(h) as Hogar,
         miembros: (chk(m) as Perfil[]).map((x) => ({ ...x, factor_racion: Number(x.factor_racion) })),
         recetas: (chk(r) as any[]).map(aReceta),
-        ingredientes: (chk(i) as any[]).map(aIngrediente),
+        ingredientes: (chk(i) as any[]).map((x) => ({ ...aIngrediente(x), grupo_plato: grupos.get(x.id) ?? null })),
         etiquetas: (chk(t) as any[]).map((x) => x.nombre),
       }
       setHogar(datos.hogar)
@@ -180,6 +185,7 @@ export function DatosProvider({ children }: { children: ReactNode }) {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'recipe_steps' }, programar)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'recipe_tags' }, programar)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'ingredients' }, programar)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ingredient_grupos' }, programar)
       .subscribe()
     const alVolver = () => document.visibilityState === 'visible' && recargar()
     document.addEventListener('visibilitychange', alVolver)
@@ -251,7 +257,8 @@ export function DatosProvider({ children }: { children: ReactNode }) {
 
   const guardarIngrediente = useCallback(
     async (i: Partial<Ingrediente> & { nombre: string }) => {
-      const { id, ...campos } = i
+      // el grupo del plato se guarda aparte (guardarGrupoPlato)
+      const { id, grupo_plato: _g, ...campos } = i
       const fila = { ...campos, household_id: hogarId }
       const resp = id
         ? await supabase.from('ingredients').update(fila).eq('id', id).select('*').single()
@@ -270,6 +277,22 @@ export function DatosProvider({ children }: { children: ReactNode }) {
       await recargar()
     },
     [recargar],
+  )
+
+  const guardarGrupoPlato = useCallback(
+    async (ingredientId: string, grupo: GrupoPlato | null) => {
+      setIngredientes((is) => is.map((i) => (i.id === ingredientId ? { ...i, grupo_plato: grupo } : i)))
+      const r = grupo
+        ? await supabase.from('ingredient_grupos').upsert({ household_id: hogarId, ingredient_id: ingredientId, grupo })
+        : await supabase.from('ingredient_grupos').delete().eq('ingredient_id', ingredientId)
+      if (r.error && /ingredient_grupos/.test(r.error.message)) {
+        await recargar()
+        throw new Error('Falta ejecutar la migración 009 en Supabase para guardar el grupo (mira la guía).')
+      }
+      chk(r)
+      await recargar()
+    },
+    [hogarId, recargar],
   )
 
   const guardarPerfil = useCallback(
@@ -313,6 +336,7 @@ export function DatosProvider({ children }: { children: ReactNode }) {
     actualizarReceta,
     guardarIngrediente,
     borrarIngrediente,
+    guardarGrupoPlato,
     guardarPerfil,
     renombrarHogar,
   }

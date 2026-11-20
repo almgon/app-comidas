@@ -5,6 +5,7 @@ import { useDatos } from '../lib/datos'
 import TarjetaReceta from '../components/TarjetaReceta'
 import { GRUPOS_PROTEICOS, tiempoTotal, type GrupoProteico, type Receta } from '../lib/tipos'
 import { useMenu } from '../lib/menu'
+import { evaluarPlato, platoPorRacion, tipoRangos, type EstadoPlato } from '../lib/plato'
 
 type Orden = 'titulo' | 'reciente' | 'valoracion' | 'tiempo'
 type Apartado = 'todas' | 'desayuno' | 'comida' | 'cena' | 'base'
@@ -25,7 +26,7 @@ const enApartado = (r: Receta, a: Apartado) =>
 const CLAVE_APARTADO = 'comidas-recetas-apartado'
 
 export default function Recetas() {
-  const { recetas, etiquetas, mapaIngredientes } = useDatos()
+  const { recetas, etiquetas, mapaIngredientes, mapaRecetas } = useDatos()
   const { enlaces } = useMenu()
   const sinProducto = useMemo(() => {
     const ids = new Set<string>()
@@ -43,6 +44,11 @@ export default function Recetas() {
   const [tag, setTag] = useState('')
   const [maxMin, setMaxMin] = useState<number | ''>('')
   const [soloFav, setSoloFav] = useState(false)
+  const [plato, setPlato] = useState<'' | 'cumple' | 'casi'>('')
+  const estadoPlato = useMemo(
+    () => new Map<string, EstadoPlato>(recetas.map((r) => [r.id, evaluarPlato(platoPorRacion(r, mapaIngredientes, mapaRecetas).reparto, tipoRangos('receta', r)).estado])),
+    [recetas, mapaIngredientes, mapaRecetas],
+  )
   const [orden, setOrden] = useState<Orden>('titulo')
 
   const filtradas = useMemo(() => {
@@ -62,6 +68,10 @@ export default function Recetas() {
         if (t == null || t > maxMin) return false
       }
       if (soloFav && !r.favorita) return false
+      if (plato) {
+        const e = estadoPlato.get(r.id)
+        if (r.es_base || !(e === 'cumple' || (plato === 'casi' && e === 'casi'))) return false
+      }
       return true
     })
     const cmp: Record<Orden, (a: (typeof res)[0], b: (typeof res)[0]) => number> = {
@@ -71,9 +81,9 @@ export default function Recetas() {
       tiempo: (a, b) => (tiempoTotal(a) ?? 999) - (tiempoTotal(b) ?? 999),
     }
     return res.sort(cmp[orden])
-  }, [recetas, q, grupo, tag, maxMin, soloFav, orden, mapaIngredientes])
+  }, [recetas, q, grupo, tag, maxMin, soloFav, plato, estadoPlato, orden, mapaIngredientes])
 
-  const nFiltros = [grupo, tag, maxMin, soloFav ? 'fav' : ''].filter((x) => x !== '').length
+  const nFiltros = [grupo, tag, maxMin, soloFav ? 'fav' : '', plato].filter((x) => x !== '').length
 
   return (
     <div>
@@ -143,6 +153,14 @@ export default function Recetas() {
           <label className="check">
             <input type="checkbox" checked={soloFav} onChange={(e) => setSoloFav(e.target.checked)} /> Solo favoritas
           </label>
+          <label>
+            🍽️ Método del plato
+            <select value={plato} onChange={(e) => setPlato(e.target.value as '' | 'cumple' | 'casi')}>
+              <option value="">Todas</option>
+              <option value="cumple">Cumplen solas</option>
+              <option value="casi">Cumplen o casi</option>
+            </select>
+          </label>
           {nFiltros > 0 && (
             <button
               className="enlace"
@@ -151,6 +169,7 @@ export default function Recetas() {
                 setTag('')
                 setMaxMin('')
                 setSoloFav(false)
+                setPlato('')
               }}
             >
               Quitar filtros

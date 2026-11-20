@@ -3,6 +3,8 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useDatos } from '../lib/datos'
 import { fmt, nutricionPorRacion, pesoReceta } from '../lib/nutricion'
 import { useMenu } from '../lib/menu'
+import TartaPlato, { ChipPlato } from '../components/TartaPlato'
+import { GRUPOS_PLATO, grupoInferido, platoPorRacion, tipoRangos, type GrupoPlato } from '../lib/plato'
 import { aptaCenaRapida, etiquetaGrupo, etiquetaTipo, tiempoTotal } from '../lib/tipos'
 
 const FUENTES: Record<string, string> = { web: 'Web', instagram: 'Instagram', tiktok: 'TikTok', texto: 'Texto pegado', manual: 'Manual' }
@@ -22,10 +24,11 @@ const NOMBRE_UNIDAD: Record<string, string> = { ud: '', racion: 'rac.', receta: 
 export default function RecetaDetalle() {
   const { id } = useParams()
   const nav = useNavigate()
-  const { mapaRecetas, mapaIngredientes, recetas, miembros, actualizarReceta, borrarReceta } = useDatos()
+  const { mapaRecetas, mapaIngredientes, recetas, miembros, actualizarReceta, borrarReceta, guardarGrupoPlato } = useDatos()
   const receta = id ? mapaRecetas.get(id) : undefined
   const [raciones, setRaciones] = useState<number | null>(null)
   const [hechos, setHechos] = useState<Set<number>>(new Set())
+  const [errorGrupo, setErrorGrupo] = useState<string | null>(null)
   const { enlaces } = useMenu()
 
   if (!receta) return <p className="vacio">No encuentro esta receta. <Link to="/recetas">Volver</Link></p>
@@ -33,6 +36,8 @@ export default function RecetaDetalle() {
   const rac = raciones ?? receta.raciones
   const factor = rac / receta.raciones
   const n = nutricionPorRacion(receta, mapaIngredientes, mapaRecetas)
+  const plato = platoPorRacion(receta, mapaIngredientes, mapaRecetas)
+  const tipoPlato = tipoRangos('receta', receta)
   const g = etiquetaGrupo(receta.grupo_proteico)
   const t = tiempoTotal(receta)
   const pesoBase = pesoReceta(receta, mapaIngredientes, mapaRecetas)
@@ -60,6 +65,7 @@ export default function RecetaDetalle() {
         {receta.es_base && <span className="chip base">Preparación base</span>}
         <span className="chip">{etiquetaTipo(receta.tipo_comida)}</span>
         {g && <span className={`chip g-${g.valor}`}>{g.emoji} {g.etiqueta}</span>}
+        {!receta.es_base && <ChipPlato reparto={plato.reparto} tipo={tipoPlato} />}
         {aptaCenaRapida(receta) && <span className="chip rapida">Cena entre semana</span>}
         {receta.congelable && <span className="chip">❄️ Congelable</span>}
         {receta.dias_nevera != null && <span className="chip">🧊 {receta.dias_nevera} días en nevera</span>}
@@ -122,6 +128,56 @@ export default function RecetaDetalle() {
         </p>
       )}
       {n.manual && <p className="suave">Proteína introducida a mano.</p>}
+
+      <section className="tarjeta">
+        <TartaPlato
+          reparto={plato.reparto}
+          tipo={tipoPlato}
+          titulo={receta.es_base ? 'Método del plato (de esta base; en cada plato cuenta lo que se use)' : 'Método del plato'}
+          pie={
+            <>
+              {plato.sinContar.length > 0 && <p className="aviso pequeno">No se han podido pesar: {[...new Set(plato.sinContar)].join(', ')}.</p>}
+              {plato.detalle.length > 0 && (
+                <details className="origen-plato">
+                  <summary>De dónde sale cada grupo (y cambiarlo)</summary>
+                  <table>
+                    <tbody>
+                      {[...plato.detalle].sort((a, b) => b.g - a.g).map((d, i) => {
+                        const ing = d.ingredient_id ? mapaIngredientes.get(d.ingredient_id) : undefined
+                        return (
+                          <tr key={i}>
+                            <td>{d.nombre}</td>
+                            <td className="derecha">{fmt(d.g)} g</td>
+                            <td className="derecha">
+                              {ing ? (
+                                <select
+                                  value={ing.grupo_plato ?? ''}
+                                  onChange={(e) => {
+                                    setErrorGrupo(null)
+                                    guardarGrupoPlato(ing.id, (e.target.value || null) as GrupoPlato | null).catch((x) => setErrorGrupo(x.message))
+                                  }}
+                                  aria-label={`Grupo de ${ing.nombre}`}
+                                >
+                                  <option value="">Auto: {GRUPOS_PLATO.find((x) => x.valor === grupoInferido(ing))!.corta}</option>
+                                  {GRUPOS_PLATO.map((x) => (
+                                    <option key={x.valor} value={x.valor}>{x.emoji} {x.corta}</option>
+                                  ))}
+                                </select>
+                              ) : null}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                  <p className="suave pequeno">El cambio vale para todas las recetas que llevan ese ingrediente. Arroz, pasta y legumbres secas cuentan ya cocidos (pesan unas 2,5 veces más).</p>
+                  {errorGrupo && <p className="error">{errorGrupo}</p>}
+                </details>
+              )}
+            </>
+          }
+        />
+      </section>
 
       <section>
         <div className="fila espacio">

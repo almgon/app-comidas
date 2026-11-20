@@ -329,9 +329,10 @@ describe('kcal y macros', () => {
     const { entradas: otra } = generarMenu(ctx, [...entradas.filter((e) => e !== anadidas[0]), fija], { rnd: semilla(10) })
     expect(otra.some((e) => e.fecha === fija.fecha && e.momento === fija.momento && ordenDe(e) === ordenDe(fija) && e.recipe_id === fija.recipe_id)).toBe(true)
     // «otra receta» para una añadida: distinta y sin repetir en el día
-    const cambio = otraAnadida(ctx, entradas, anadidas[0], semilla(11))!
-    expect(cambio.recipe_id).not.toBe(anadidas[0].recipe_id)
-    expect(entradas.filter((e) => e.fecha === cambio.fecha && e !== anadidas[0]).some((e) => e.recipe_id === cambio.recipe_id)).toBe(false)
+    const aCambiar = anadidas.find((e) => e.momento !== 'desayuno')!
+    const cambio = otraAnadida(ctx, entradas, aCambiar, semilla(11))!
+    expect(cambio.recipe_id).not.toBe(aCambiar.recipe_id)
+    expect(entradas.filter((e) => e.fecha === cambio.fecha && e !== aCambiar).some((e) => e.recipe_id === cambio.recipe_id)).toBe(false)
   })
 
   it('no añade nada si el día ya está en su objetivo', () => {

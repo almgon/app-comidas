@@ -1,5 +1,7 @@
 export type TipoComida = 'comida' | 'cena' | 'ambas' | 'desayuno'
 export type GrupoProteico = 'legumbre' | 'pescado_blanco' | 'pescado_azul' | 'carne_blanca' | 'carne_roja' | 'huevo' | 'vegetal'
+/** Grupo del método del plato: verdura y fruta, proteína, hidratos, grasa saludable u «otro» (no cuenta) */
+export type GrupoPlato = 'verdura' | 'proteina' | 'hidratos' | 'grasa' | 'otro'
 export type FuenteTipo = 'web' | 'instagram' | 'tiktok' | 'texto' | 'manual'
 
 export const TIPOS_COMIDA: { valor: TipoComida; etiqueta: string }[] = [
@@ -55,6 +57,8 @@ export interface Ingrediente {
   codigo_off?: string | null
   envase_cantidad?: number | null
   envase_nombre?: string | null
+  /** grupo del método del plato elegido a mano por el hogar (si no, se deduce) */
+  grupo_plato?: GrupoPlato | null
 }
 
 export interface LineaIngrediente {

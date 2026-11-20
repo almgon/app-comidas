@@ -94,3 +94,13 @@ Primeros pasos en la app:
 4. **Recetas → 🛒 Elegir productos** (o Ajustes → Productos de Mercadona): elige una vez el producto de Mercadona de cada ingrediente que usan vuestras recetas; vale para todas las recetas que lo llevan. En las recetas nuevas, cada ingrediente tiene el botón «🛒 Buscar en Mercadona».
 5. **Menú**: en cada desayuno, comida o cena, «+ Añadir otra receta». Cada día muestra las kcal de cada uno y qué falta o sobra. «✨ Proponer semana» elige los platos para acercarse a vuestros objetivos y, si a un día le faltan kcal, añade otra receta a algún hueco.
 6. **Preparaciones base** (boloñesa, sofrito…): en el editor, «+ Añadir preparación base», en raciones, en gramos o la receta entera. Si la base reduce al cocinarse, pon su «peso de la receta terminada» para que los gramos cuenten bien.
+
+## Método del plato (migración 009)
+
+1. **Supabase → SQL Editor → New query**: pega [`supabase/migrations/009_metodo_plato.sql`](supabase/migrations/009_metodo_plato.sql) y pulsa **Run**. No borra nada. Sin este paso todo funciona igual, pero no se puede cambiar a mano el grupo de un ingrediente.
+2. En el iPhone, cierra la app del todo y vuelve a abrirla (a veces dos veces).
+3. Cada ingrediente cuenta en un grupo: 🥦 verdura y fruta, 🍗 proteína (carne, pescado, huevo, legumbres, yogur, queso), 🍞 hidratos (pan, arroz, pasta, patata, avena) o 🫒 grasa saludable (aceite, frutos secos, aguacate). Especias, caldos, leche, bebidas y salsas no cuentan. La app lo deduce de la sección y del nombre; si alguno no cuadra, cámbialo en **Ajustes → Ingredientes** o en la receta («De dónde sale cada grupo»).
+4. Se mide por **peso en el plato ya cocinado** (no por kcal): el arroz, la pasta y las legumbres secas cuentan unas 2,5 veces su peso en crudo. Objetivo: 50 % verdura y fruta, 25 % proteína, 25 % hidratos y poca grasa. Se da por bueno con verdura 40-65 %, proteína 15-35 %, hidratos 15-35 % y grasa ≤ 12 %.
+5. **Desayuno, más flexible**: verdura y fruta 15-65 % (con una pieza de fruta basta), proteína 10-40 %, hidratos 20-60 %, grasa ≤ 20 %.
+6. Cada receta muestra su tarta y si cumple (✓), casi (≈) o no (✗). En **Recetas → Filtros → Método del plato** se ven las que cumplen.
+7. En el **Menú**, la tarta pequeña de cada desayuno, comida o cena cuenta todas sus recetas y alimentos sueltos juntos; tócala para ver el reparto. «✨ Proponer semana» busca para cada hueco una receta que cumpla sola o la completa con 1 o 2 recetas más (por ejemplo, crema de calabacín + tortilla francesa + pan), sin dejar de ajustar las kcal del día.

@@ -3,7 +3,8 @@
 import { aptaCenaRapida, type Comensal, type Congelado, type EntradaPlan, type GrupoProteico, type Ingrediente, type Momento, type Origen, type Receta } from './tipos'
 import { DIAS, fechasSemana } from './semana'
 import { MACROS_CERO, sumarMacros, type Macros } from './nutricion'
-import { MACROS_ESTIMADOS, desajuste, diaPersona, rangos } from './objetivos'
+import { MACROS_ESTIMADOS, desajuste, diaPersona } from './objetivos'
+import { evaluarPlato, repartoHueco, sumarReparto, tipoRangos, type Reparto } from './plato'
 
 export const MOMENTOS: Momento[] = ['comida', 'cena']
 
@@ -29,6 +30,10 @@ export interface ContextoMenu {
   proteina: Map<string, number | null>
   /** kcal y macros por ración de cada receta (null si no se sabe) */
   macros?: Map<string, Macros | null>
+  /** reparto del método del plato por ración de cada receta (null si no se sabe) */
+  platos?: Map<string, Reparto | null>
+  /** uso interno: la mejor combinación de cada receta para cumplir el método del plato */
+  combos?: Map<string, Combo>
   /** catálogo (para las kcal de los alimentos sueltos) */
   ingredientes?: Map<string, Ingrediente>
   comensales: Comensal[]
@@ -197,13 +202,20 @@ function penalizacion(asig: (Asignada | null)[], ctx: ContextoMenu, recetas: Map
     proteinaDia: new Map(), sinProteina: 0,
   }
   const platosDia: Macros[] = [0, 1, 2, 3, 4, 5, 6].map(() => ({ ...MACROS_CERO }))
+  let platoP = 0
   for (const a of asig) {
     if (!a) continue
     contarGrupo(ind, recetas.get(a.recipe_id)!.grupo_proteico)
     platosDia[a.dia] = sumarMacros(platosDia[a.dia], macrosRacion(ctx, a.recipe_id, a.momento))
+    // Método del plato: lo que cuesta que ese hueco lo cumpla (sola o con lo que mejor la complete) y lo que eso suma al día
+    const cb = ctx.combos?.get(`${a.momento}|${a.recipe_id}`)
+    if (cb) {
+      platosDia[a.dia] = sumarMacros(platosDia[a.dia], cb.extra)
+      platoP += cb.coste
+    }
   }
   const s = ind.escala
-  let p = 0
+  let p = platoP
   // Frecuencias AESAN
   p += 3 * Math.max(0, 4 * s - ind.legumbre)
   p += 3 * Math.max(0, 3 * s - ind.pescado) + 1 * Math.max(0, ind.pescado - 4 * s)
@@ -212,6 +224,16 @@ function penalizacion(asig: (Asignada | null)[], ctx: ContextoMenu, recetas: Map
   p += 1.5 * Math.max(0, ind.carneRoja - 1) + 3 * Math.max(0, ind.carneRoja - 2)
   p += 2.5 * Math.max(0, ind.huevo - 4 * s)
   p += 0.5 * ind.sinGrupo
+  // Método del plato: si comida y cena necesitan las mismas recetas para completarse (o una la de la otra), no puede ser
+  if (ctx.combos)
+    for (let d = 0; d < 7; d++) {
+      const x = asig[d * 2]
+      const y = asig[d * 2 + 1]
+      if (!x || !y) continue
+      const cx = ctx.combos.get(`${x.momento}|${x.recipe_id}`)?.ids ?? []
+      const cy = ctx.combos.get(`${y.momento}|${y.recipe_id}`)?.ids ?? []
+      if (cx.includes(y.recipe_id) || cy.includes(x.recipe_id) || cx.some((id) => cy.includes(id))) p += 0.5 * (cx.length + cy.length) + 1
+    }
   // Kcal y macros de cada uno, cada día, lo más cerca posible de su objetivo (solo días con todo planificado)
   for (const c of ctx.comensales) {
     const base = ctx.baseDia?.get(c.id) ?? []
@@ -276,6 +298,7 @@ export function macrosRacion(ctx: Pick<ContextoMenu, 'macros' | 'proteina'>, id:
  */
 export function generarMenu(ctx: ContextoMenu, actuales: EntradaPlan[], opciones: OpcionesGenerar = {}): ResultadoMenu {
   const rnd = opciones.rnd ?? Math.random
+  if (ctx.platos && !ctx.combos) ctx = { ...ctx, combos: combosPlato(ctx) }
   const principales = actuales.filter((e) => ordenDe(e) === 0)
   const anadidas = actuales.filter((e) => ordenDe(e) > 0)
   const fijadas = opciones.soloHueco ? anadidas : anadidas.filter((e) => e.fijado)
@@ -322,8 +345,6 @@ export function desajusteDia(ctx: ContextoMenu, delDia: EntradaPlan[]): number {
   return ctx.comensales.reduce((s, c) => s + desajuste(macrosDia(ctx, delDia, c), c), 0)
 }
 
-const faltanKcal = (ctx: ContextoMenu, delDia: EntradaPlan[]) => ctx.comensales.some((c) => macrosDia(ctx, delDia, c).kcal < rangos(c).kcal[0])
-
 /** Recetas que se pueden añadir a un hueco que ya tiene su receta principal */
 function candidatasAnadir(ctx: ContextoMenu, dia: number, fecha: string, momento: Momento, delDia: EntradaPlan[]): Opcion[] {
   const usadas = new Set(delDia.map((e) => e.recipe_id).filter(Boolean))
@@ -334,9 +355,82 @@ const nuevaAnadida = (ctx: ContextoMenu, fecha: string, momento: Momento, orden:
   fecha, momento, orden, recipe_id: o.recipe_id, raciones: ctx.raciones, origen: o.origen, freezer_item_id: null, fijado: false, nota: null, extras: [],
 })
 
-/** Si a un día le faltan kcal, añade hasta 2 recetas (una por hueco) que lo dejen lo más ajustado posible */
+// ---------------------------------------------------------
+// Método del plato
+// ---------------------------------------------------------
+/** Peso del método del plato en la puntuación: 20 puntos fuera de rango en un hueco cuestan 3 (como faltar una legumbre) */
+export const PESO_PLATO = 15
+/** Un hueco que no cumple cuesta siempre algo más (salto) y, además, según lo lejos que quede */
+export const SALTO_PLATO = 2.5
+const castigoPlato = (desviacion: number) => (desviacion > 0 ? SALTO_PLATO + PESO_PLATO * desviacion : 0)
+/** Lo que cuesta añadir una receta más a un hueco (mejor pocas recetas por comida) */
+const COSTE_ANADIR = 0.3
+/** Hueco cuyas recetas no tienen datos para el método del plato */
+const PLATO_DESCONOCIDO = 0.4
+
+export interface Combo {
+  coste: number
+  /** macros por ración de las recetas que se añadirían */
+  extra: Macros
+  /** recetas que se añadirían */
+  ids: string[]
+}
+
+const factorHogarDe = (ctx: Pick<ContextoMenu, 'comensales'>) => ctx.comensales.reduce((s, c) => s + c.factor, 0) || 1
+
+/** Lo lejos que queda un hueco (todas sus recetas y alimentos sueltos) del método del plato. 0 = lo cumple. */
+export function costePlatoHueco(ctx: ContextoMenu, delHueco: Pick<EntradaPlan, 'recipe_id' | 'origen' | 'extras'>[], momento: Momento): number {
+  if (!ctx.platos) return 0
+  if (delHueco.some((e) => e.origen === 'libre')) return 0
+  const r = repartoHueco(delHueco, ctx.platos, ctx.ingredientes ?? new Map(), factorHogarDe(ctx))
+  if (!r) return PLATO_DESCONOCIDO
+  return castigoPlato(evaluarPlato(r, tipoRangos(momento)).desviacion)
+}
+
+/**
+ * Para cada receta y momento, la mejor forma de cumplir el método del plato: sola, con otra receta o con dos
+ * (por ejemplo, crema de calabacín + tortilla francesa + pan). Lo usa el generador para elegir la receta principal.
+ */
+export function combosPlato(ctx: ContextoMenu): Map<string, Combo> {
+  const res = new Map<string, Combo>()
+  if (!ctx.platos) return res
+  for (const m of MOMENTOS_DIA) {
+    const tipo = tipoRangos(m)
+    const validas = ctx.recetas.filter((r) => !r.es_base && sirvePara(r, m))
+    const conDatos = validas.filter((r) => ctx.platos!.get(r.id))
+    const dev = (rep: Reparto) => castigoPlato(evaluarPlato(rep, tipo).desviacion)
+    for (const r of validas) {
+      const pr = ctx.platos.get(r.id)
+      if (!pr) {
+        res.set(`${m}|${r.id}`, { coste: PLATO_DESCONOCIDO, extra: { ...MACROS_CERO }, ids: [] })
+        continue
+      }
+      let mejor: { coste: number; ids: string[] } = { coste: dev(pr), ids: [] }
+      if (mejor.coste > 0) {
+        const otras = conDatos.filter((x) => x.id !== r.id)
+        const solas = otras.map((x) => ({ id: x.id, rep: sumarReparto(pr, ctx.platos!.get(x.id)!) })).map((x) => ({ ...x, coste: dev(x.rep) + COSTE_ANADIR }))
+        for (const x of solas) if (x.coste < mejor.coste) mejor = { coste: x.coste, ids: [x.id] }
+        // parejas: entre las que más ayudan solas (y todas si hay pocas)
+        const top = otras.length <= 30 ? solas : [...solas].sort((a, b) => a.coste - b.coste).slice(0, 25)
+        for (let i = 0; i < top.length && mejor.coste > COSTE_ANADIR; i++)
+          for (let j = i + 1; j < top.length; j++) {
+            const c = dev(sumarReparto(top[i].rep, ctx.platos.get(top[j].id)!)) + 2 * COSTE_ANADIR
+            if (c < mejor.coste) mejor = { coste: c, ids: [top[i].id, top[j].id] }
+          }
+      }
+      const extra = mejor.ids.reduce((t, id) => sumarMacros(t, macrosRacion(ctx, id, m)), { ...MACROS_CERO })
+      res.set(`${m}|${r.id}`, { coste: mejor.coste, extra, ids: mejor.ids })
+    }
+  }
+  return res
+}
+
+/**
+ * Completa cada desayuno, comida y cena con 1 o 2 recetas más cuando así se cumple mejor el método del plato
+ * o se ajustan mejor las kcal del día (por ejemplo, crema de calabacín + tortilla francesa + pan).
+ */
 function complementar(ctx: ContextoMenu, entradas: EntradaPlan[], rnd: () => number): EntradaPlan[] {
-  if (!ctx.comensales.length) return []
+  if (!ctx.comensales.length && !ctx.platos) return []
   const usos = new Map<string, number>()
   for (const e of entradas) if (e.recipe_id) usos.set(e.recipe_id, (usos.get(e.recipe_id) ?? 0) + 1)
   const nuevas: EntradaPlan[] = []
@@ -357,32 +451,43 @@ function complementar(ctx: ContextoMenu, entradas: EntradaPlan[], rnd: () => num
     if (g && delDia.some((e) => e.recipe_id && recetas.get(e.recipe_id)?.grupo_proteico === g)) p += 0.5
     return p
   }
+  const puntuar = (delDia: EntradaPlan[], momento: Momento) =>
+    (ctx.comensales.length ? desajusteDia(ctx, delDia) : 0) + costePlatoHueco(ctx, delDia.filter((e) => e.momento === momento), momento)
   fechasSemana(ctx.lunes).forEach((fecha, dia) => {
     const delDia = entradas.filter((e) => e.fecha === fecha)
-    if (delDia.some((e) => e.origen === 'libre')) return
-    for (let k = 0; k < 2; k++) {
-      if (!faltanKcal(ctx, delDia)) break
-      let mejor: EntradaPlan | null = null
-      let mejorP = desajusteDia(ctx, delDia) - 0.25
-      for (const momento of MOMENTOS_DIA) {
-        const delHueco = delDia.filter((e) => e.momento === momento)
-        if (!delHueco.some((e) => ordenDe(e) === 0 && e.recipe_id) || delHueco.some((e) => ordenDe(e) > 0)) continue
-        const orden = Math.max(...delHueco.map(ordenDe)) + 1
-        for (const o of candidatasAnadir(ctx, dia, fecha, momento, delDia)) {
-          const cand = nuevaAnadida(ctx, fecha, momento, orden, o)
-          const p = desajusteDia(ctx, [...delDia, cand]) + extraAnadir(o.recipe_id, delDia) + 0.2 * rnd()
-          if (p < mejorP) {
-            mejorP = p
-            mejor = cand
+    if (delDia.some((e) => e.origen === 'libre' && e.momento !== 'desayuno')) return
+    for (const momento of MOMENTOS_DIA) {
+      const delHueco = delDia.filter((e) => e.momento === momento)
+      if (delHueco.some((e) => e.origen === 'libre')) continue
+      if (!delHueco.some((e) => ordenDe(e) === 0 && e.recipe_id) || delHueco.some((e) => ordenDe(e) > 0)) continue
+      const orden = Math.max(...delHueco.map(ordenDe)) + 1
+      const cands = candidatasAnadir(ctx, dia, fecha, momento, delDia)
+      let mejor: EntradaPlan[] = []
+      let mejorP = puntuar(delDia, momento)
+      const solas = cands.map((o) => {
+        const e = nuevaAnadida(ctx, fecha, momento, orden, o)
+        return { e, p: puntuar([...delDia, e], momento) + extraAnadir(o.recipe_id, delDia) + COSTE_ANADIR + 0.15 * rnd() }
+      })
+      for (const x of solas) if (x.p < mejorP) [mejorP, mejor] = [x.p, [x.e]]
+      // Dos recetas más (entre las que mejor van solas)
+      if (ctx.platos) {
+        const top = [...solas].sort((a, b) => a.p - b.p).slice(0, 10)
+        for (let i = 0; i < top.length; i++)
+          for (let j = i + 1; j < top.length; j++) {
+            const a = top[i].e
+            const b = { ...top[j].e, orden: orden + 1 }
+            if (a.recipe_id === b.recipe_id) continue
+            const p = puntuar([...delDia, a, b], momento) + extraAnadir(a.recipe_id!, delDia) + extraAnadir(b.recipe_id!, delDia) + 2 * COSTE_ANADIR + 0.15 * rnd()
+            if (p < mejorP) [mejorP, mejor] = [p, [a, b]]
           }
-        }
       }
-      if (!mejor) break
-      delDia.push(mejor)
-      nuevas.push(mejor)
-      usos.set(mejor.recipe_id!, (usos.get(mejor.recipe_id!) ?? 0) + 1)
-      const g = mejor.momento !== 'desayuno' ? recetas.get(mejor.recipe_id!)?.grupo_proteico : null
-      if (g) grupos.set(g, (grupos.get(g) ?? 0) + 1)
+      for (const e of mejor) {
+        delDia.push(e)
+        nuevas.push(e)
+        usos.set(e.recipe_id!, (usos.get(e.recipe_id!) ?? 0) + 1)
+        const g = e.momento !== 'desayuno' ? recetas.get(e.recipe_id!)?.grupo_proteico : null
+        if (g) grupos.set(g, (grupos.get(g) ?? 0) + 1)
+      }
     }
   })
   return nuevas
@@ -399,7 +504,8 @@ export function otraAnadida(ctx: ContextoMenu, entradas: EntradaPlan[], e: Entra
   for (const o of candidatasAnadir(ctx, dia, e.fecha, e.momento, delDia)) {
     if (o.recipe_id === e.recipe_id) continue
     const cand = { ...e, recipe_id: o.recipe_id, origen: o.origen, freezer_item_id: null, fijado: false }
-    const p = desajusteDia(ctx, [...delDia, cand]) + 0.8 * rnd()
+    const conCand = [...delDia, cand]
+    const p = desajusteDia(ctx, conCand) + costePlatoHueco(ctx, conCand.filter((x) => x.momento === e.momento), e.momento) + 0.8 * rnd()
     if (p < mejorP) {
       mejorP = p
       mejor = cand
@@ -429,6 +535,7 @@ function generarDesayunos(ctx: ContextoMenu, actuales: EntradaPlan[], rnd: () =>
     for (const o of opcionesHueco({ dia, fecha, momento: 'desayuno' }, ctx, disp)) {
       const r = recetas.get(o.recipe_id)!
       let p = 0.5 * (usos.get(o.recipe_id) ?? 0) - 0.35 * ((r.valoracion ?? 3) - 3) - (r.favorita ? 0.4 : 0) + rnd() * 1.2
+      p += ctx.combos?.get(`desayuno|${o.recipe_id}`)?.coste ?? 0
       if (o.origen === 'congelador') p -= 1.5
       if (soloFecha && e?.recipe_id === o.recipe_id) p += 3 // «otro desayuno»: mejor uno distinto
       if (p < mejorP) {
