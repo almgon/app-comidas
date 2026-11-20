@@ -10,13 +10,13 @@ import SelectorSemana, { EnlacesSemana } from '../components/SelectorSemana'
 
 export default function Domingo() {
   const [lunes, setLunes] = useSemanaElegida()
-  const { mapaRecetas } = useDatos()
+  const { mapaRecetas, mapaIngredientes } = useDatos()
   const { congelados } = useMenu()
   const semana = useSemana(lunes)
   const [cerrando, setCerrando] = useState(false)
   const domingo = sumarDias(lunes, -1)
   const estado = semana.plan?.batch ?? {}
-  const items = useMemo(() => sesionDomingo(lunes, semana.entradas, mapaRecetas, estado, congelados), [lunes, semana.entradas, mapaRecetas, estado, congelados])
+  const items = useMemo(() => sesionDomingo(lunes, semana.entradas, mapaRecetas, estado, congelados, mapaIngredientes), [lunes, semana.entradas, mapaRecetas, estado, congelados, mapaIngredientes])
   const cerrado = semana.plan?.batch_cerrado_en
   const minutos = items.reduce((s, i) => s + (i.receta.t_prep_min ?? 0), 0)
   const alCongelador = items.reduce((s, i) => s + i.extra, 0)

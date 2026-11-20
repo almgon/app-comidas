@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from './supabase'
 import type { Hogar, Ingrediente, Perfil, Receta, RecetaBorrador } from './tipos'
+import { esUnidadBase } from './nutricion'
 
 interface Datos {
   cargando: boolean
@@ -21,7 +22,7 @@ interface Datos {
   actualizarReceta: (id: string, cambios: Partial<Pick<Receta, 'favorita' | 'valoracion'>>) => Promise<void>
   guardarIngrediente: (i: Partial<Ingrediente> & { nombre: string }) => Promise<Ingrediente>
   borrarIngrediente: (id: string) => Promise<void>
-  guardarPerfil: (cambios: Partial<Pick<Perfil, 'nombre' | 'peso_kg' | 'factor_racion'>>) => Promise<void>
+  guardarPerfil: (cambios: Partial<Pick<Perfil, 'nombre' | 'peso_kg' | 'factor_racion' | 'kcal_objetivo'>>) => Promise<void>
   renombrarHogar: (nombre: string) => Promise<void>
 }
 
@@ -43,6 +44,7 @@ function aReceta(row: any): Receta {
     ...r,
     raciones: Number(r.raciones),
     proteina_racion_manual: r.proteina_racion_manual == null ? null : Number(r.proteina_racion_manual),
+    peso_total_g: r.peso_total_g == null ? null : Number(r.peso_total_g),
     ingredientes: [...(recipe_ingredients ?? [])]
       .sort((a: any, b: any) => a.orden - b.orden)
       .map((l: any) => ({ ...l, cantidad: l.cantidad == null ? null : Number(l.cantidad) })),
@@ -86,6 +88,8 @@ export function DatosProvider({ children }: { children: ReactNode }) {
   const [ingredientes, setIngredientes] = useState<Ingrediente[]>(cache?.ingredientes ?? [])
   const [etiquetas, setEtiquetas] = useState<string[]>(cache?.etiquetas ?? [])
   const [enLinea, setEnLinea] = useState(navigator.onLine)
+  const recetasRef = useRef(recetas)
+  recetasRef.current = recetas
 
   useEffect(() => {
     const on = () => setEnLinea(true)
@@ -190,10 +194,12 @@ export function DatosProvider({ children }: { children: ReactNode }) {
   const guardarReceta = useCallback(
     async (b: RecetaBorrador) => {
       const { ingredientes: lineas, pasos, etiquetas: tags, id, ...campos } = b
-      const fila = { ...campos, titulo: campos.titulo.trim() || 'Receta sin título' }
-      const guardada = id
-        ? chk(await supabase.from('recipes').update(fila).eq('id', id).select('id').single())
-        : chk(await supabase.from('recipes').insert(fila).select('id').single())
+      const fila: Record<string, unknown> = { ...campos, titulo: campos.titulo.trim() || 'Receta sin título' }
+      // peso_total_g llega con la migración 008: si no se usa, no se manda (así se puede guardar aunque falte la migración)
+      if (fila.peso_total_g == null && !(id && recetasRef.current.find((r) => r.id === id)?.peso_total_g != null)) delete fila.peso_total_g
+      const resp = id ? await supabase.from('recipes').update(fila).eq('id', id).select('id').single() : await supabase.from('recipes').insert(fila).select('id').single()
+      if (resp.error && /peso_total_g/.test(resp.error.message)) throw new Error('Falta ejecutar la migración 008 en Supabase para guardar el peso de la receta terminada (mira la guía).')
+      const guardada = chk(resp)
       const rid = (guardada as any).id as string
 
       // Hijos: se reemplazan enteros (son pocos)
@@ -209,7 +215,7 @@ export function DatosProvider({ children }: { children: ReactNode }) {
               ingredient_id: l.sub_recipe_id ? null : l.ingredient_id,
               sub_recipe_id: l.sub_recipe_id === rid ? null : l.sub_recipe_id,
               cantidad: l.cantidad,
-              unidad: l.sub_recipe_id ? 'racion' : l.unidad,
+              unidad: l.sub_recipe_id ? (esUnidadBase(l.unidad) ? l.unidad : 'racion') : l.unidad,
               texto_original: l.texto_original,
             })),
           ),
@@ -267,9 +273,11 @@ export function DatosProvider({ children }: { children: ReactNode }) {
   )
 
   const guardarPerfil = useCallback(
-    async (cambios: Partial<Pick<Perfil, 'nombre' | 'peso_kg' | 'factor_racion'>>) => {
+    async (cambios: Partial<Pick<Perfil, 'nombre' | 'peso_kg' | 'factor_racion' | 'kcal_objetivo'>>) => {
       if (!uid) return
-      chk(await supabase.from('profiles').update(cambios).eq('id', uid))
+      const r = await supabase.from('profiles').update(cambios).eq('id', uid)
+      if (r.error && /kcal_objetivo/.test(r.error.message)) throw new Error('Falta ejecutar la migración 008 en Supabase para guardar el objetivo de kcal (mira la guía).')
+      chk(r)
       await recargar()
     },
     [uid, recargar],

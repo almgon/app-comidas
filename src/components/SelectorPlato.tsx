@@ -1,16 +1,18 @@
 import { useMemo, useState } from 'react'
 import { normalizar } from '../../shared/parser.js'
-import { esComidaDeBatch, opcionesHueco, problemasEntrada, type ContextoMenu, type Hueco, type Opcion } from '../lib/generador'
+import { esComidaDeBatch, opcionesHueco, ordenDe, problemasEntrada, type ContextoMenu, type Hueco, type Opcion } from '../lib/generador'
 import { useDatos } from '../lib/datos'
 import { DIAS, fechasSemana, fechaCorta } from '../lib/semana'
 import { fmt } from '../lib/nutricion'
 import { ORIGENES, etiquetaGrupo, tiempoTotal, type EntradaPlan, type Extra, type Momento, type Origen } from '../lib/tipos'
 
 interface Props {
-  hueco: { fecha: string; momento: Momento }
+  /** orden 0 = receta principal del hueco; 1, 2… = recetas añadidas */
+  hueco: { fecha: string; momento: Momento; orden: number }
   ctx: ContextoMenu
   actual: EntradaPlan | undefined
-  otra: EntradaPlan | undefined
+  /** todo lo que hay ese día (para no repetir receta) */
+  delDia: EntradaPlan[]
   entradas: EntradaPlan[]
   onElegir: (e: EntradaPlan) => void
   /** guarda sin cerrar (alimentos sueltos) */
@@ -19,7 +21,12 @@ interface Props {
   onCerrar: () => void
 }
 
-export default function SelectorPlato({ hueco, ctx, actual, otra, entradas, onElegir, onGuardar, onVaciar, onCerrar }: Props) {
+export default function SelectorPlato({ hueco, ctx, actual, delDia, entradas, onElegir, onGuardar, onVaciar, onCerrar }: Props) {
+  const anadida = hueco.orden > 0
+  const otras_del_dia = useMemo(
+    () => delDia.filter((e) => !(e.momento === hueco.momento && ordenDe(e) === hueco.orden) && e.recipe_id && e.origen !== 'libre'),
+    [delDia, hueco.momento, hueco.orden],
+  )
   const [q, setQ] = useState('')
   const [todas, setTodas] = useState(false)
   const [nota, setNota] = useState(actual?.origen === 'libre' ? actual.nota ?? '' : '')
@@ -34,8 +41,9 @@ export default function SelectorPlato({ hueco, ctx, actual, otra, entradas, onEl
 
   const validas = useMemo(() => {
     const disp = new Map(ctx.congelados.map((c) => [c.id, c.raciones + (actual?.freezer_item_id === c.id ? actual.raciones : 0)]))
-    return opcionesHueco(h, ctx, disp).filter((o) => o.recipe_id !== otra?.recipe_id || otra?.origen === 'libre')
-  }, [h, ctx, actual, otra])
+    const usadas = new Set(otras_del_dia.map((e) => e.recipe_id))
+    return opcionesHueco(h, ctx, disp).filter((o) => !usadas.has(o.recipe_id))
+  }, [h, ctx, actual, otras_del_dia])
 
   const nq = normalizar(q)
   const coincide = (id: string) => !nq || normalizar(recetas.get(id)?.titulo ?? '').includes(nq)
@@ -49,7 +57,7 @@ export default function SelectorPlato({ hueco, ctx, actual, otra, entradas, onEl
     : []
 
   const entrada = (o: Opcion): EntradaPlan => ({
-    id: actual?.id, fecha: hueco.fecha, momento: hueco.momento, recipe_id: o.recipe_id, raciones: actual?.raciones ?? ctx.raciones,
+    id: actual?.id, fecha: hueco.fecha, momento: hueco.momento, orden: hueco.orden, recipe_id: o.recipe_id, raciones: actual?.raciones ?? ctx.raciones,
     origen: o.origen, freezer_item_id: o.freezer_item_id, fijado: true, nota: null, extras: actual?.extras ?? [],
   })
 
@@ -58,8 +66,9 @@ export default function SelectorPlato({ hueco, ctx, actual, otra, entradas, onEl
     const g = etiquetaGrupo(r.grupo_proteico)
     const t = tiempoTotal(r)
     const p = ctx.proteina.get(r.id)
+    const m = ctx.macros?.get(r.id)
     const c = o.freezer_item_id ? ctx.congelados.find((x) => x.id === o.freezer_item_id) : undefined
-    const problemas = conProblemas ? problemasEntrada(entrada(o), otra, r, dia) : []
+    const problemas = conProblemas ? problemasEntrada(entrada(o), delDia, r, dia) : []
     const n = usosSemana.get(r.id) ?? 0
     return (
       <li key={`${o.recipe_id}-${o.origen}-${o.freezer_item_id ?? ''}`}>
@@ -68,6 +77,7 @@ export default function SelectorPlato({ hueco, ctx, actual, otra, entradas, onEl
           <span className="chips">
             {g && <span className={`chip g-${g.valor}`}>{g.emoji} {g.etiqueta}</span>}
             {t != null && <span className="chip">⏱ {t} min</span>}
+            {m && <span className="chip">🔥 {fmt(m.kcal)} kcal</span>}
             {p != null && <span className="chip">💪 {fmt(p)} g</span>}
             <span className="chip">{ORIGENES[o.origen].emoji} {o.origen === 'congelador' && c ? `${fmt(c.raciones, 1)} rac. · ${fechaCorta(c.congelado_en)}` : ORIGENES[o.origen].etiqueta}</span>
             {n > 0 && <span className="chip">ya {n}× esta semana</span>}
@@ -87,7 +97,7 @@ export default function SelectorPlato({ hueco, ctx, actual, otra, entradas, onEl
       <div className="hoja" onClick={(e) => e.stopPropagation()}>
         <div className="fila espacio">
           <h2>
-            {DIAS[dia]} · {{ desayuno: 'Desayuno', comida: 'Comida', cena: 'Cena' }[hueco.momento]}
+            {DIAS[dia]} · {{ desayuno: 'Desayuno', comida: 'Comida', cena: 'Cena' }[hueco.momento]}{anadida ? ' · otra receta' : ''}
           </h2>
           <button className="enlace" onClick={onCerrar}>Cerrar</button>
         </div>
@@ -118,31 +128,32 @@ export default function SelectorPlato({ hueco, ctx, actual, otra, entradas, onEl
         {!todas && (
           <button className="enlace" onClick={() => setTodas(true)}>Ver también las que no cumplen las reglas</button>
         )}
-        <AlimentosSueltos
+        {anadida && <p className="suave">Se añade a lo que ya hay en este hueco (por ejemplo, una ensalada o un postre). Cuenta para las kcal del día y para la compra.</p>}
+        {!anadida && <AlimentosSueltos
           extras={actual?.extras ?? []}
           onCambiar={(extras) =>
             onGuardar({
-              ...(actual ?? { fecha: hueco.fecha, momento: hueco.momento, recipe_id: null, raciones: ctx.raciones, origen: 'fresco', freezer_item_id: null, fijado: false, nota: null }),
+              ...(actual ?? { fecha: hueco.fecha, momento: hueco.momento, orden: 0, recipe_id: null, raciones: ctx.raciones, origen: 'fresco', freezer_item_id: null, fijado: false, nota: null }),
               extras,
             })
           }
-        />
-        <div className="libre-form">
+        />}
+        {!anadida && <div className="libre-form">
           <input placeholder="Nota (opcional): restaurante, casa de…" value={nota} onChange={(e) => setNota(e.target.value)} />
           <button
             className="boton"
             onClick={() =>
               onElegir({
-                id: actual?.id, fecha: hueco.fecha, momento: hueco.momento, recipe_id: null, raciones: 0, origen: 'libre',
+                id: actual?.id, fecha: hueco.fecha, momento: hueco.momento, orden: 0, recipe_id: null, raciones: 0, origen: 'libre',
                 freezer_item_id: null, fijado: true, nota: nota.trim() || null, extras: [],
               })
             }
           >
             🚶 Comemos fuera
           </button>
-        </div>
+        </div>}
         {actual && (
-          <button className="boton peligro margen-arriba" onClick={onVaciar}>Vaciar hueco</button>
+          <button className="boton peligro margen-arriba" onClick={onVaciar}>{anadida ? 'Quitar esta receta' : 'Vaciar hueco (todas sus recetas)'}</button>
         )}
       </div>
     </div>

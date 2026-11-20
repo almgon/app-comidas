@@ -26,7 +26,7 @@ export default function Compra() {
   const [preciosDe, setPreciosDe] = useState<string | null>(null)
 
   const necesidades = useMemo(() => {
-    const batch = sesionDomingo(lunes, semana.entradas, mapaRecetas, semana.plan?.batch ?? {}, congelados)
+    const batch = sesionDomingo(lunes, semana.entradas, mapaRecetas, semana.plan?.batch ?? {}, congelados, mapaIngredientes)
     return calcularCompra({ lunes, entradas: semana.entradas, recetas: mapaRecetas, ingredientes: mapaIngredientes, batch, comensales, envases })
   }, [lunes, semana.entradas, semana.plan, mapaRecetas, mapaIngredientes, congelados, comensales, envases])
 

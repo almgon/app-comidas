@@ -13,6 +13,7 @@ import Menu from './pages/Menu'
 import Domingo from './pages/Domingo'
 import Congelador from './pages/Congelador'
 import Compra from './pages/Compra'
+import ProductosMercadona from './pages/ProductosMercadona'
 import { MenuProvider } from './lib/menu'
 
 function Pestanas() {
@@ -31,7 +32,7 @@ function Pestanas() {
         <NavLink to="/compra">
           <span>🛒</span>Compra
         </NavLink>
-        <NavLink to="/recetas" className={({ isActive }) => (isActive || loc.pathname.startsWith('/receta') ? 'active' : '')}>
+        <NavLink to="/recetas" className={({ isActive }) => (isActive || loc.pathname.startsWith('/receta') || loc.pathname === '/mercadona' ? 'active' : '')}>
           <span>📖</span>Recetas
         </NavLink>
         <NavLink to="/importar">
@@ -75,6 +76,7 @@ export default function App() {
         <Route path="importar" element={<Importar />} />
         <Route path="ajustes" element={<Ajustes />} />
         <Route path="ingredientes" element={<Ingredientes />} />
+        <Route path="mercadona" element={<ProductosMercadona />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

@@ -1,5 +1,6 @@
 // Sesión de batch cooking del domingo: qué cocinar, cuánto y dónde guardarlo
-import type { Congelado, EntradaPlan, EstadoBatch, Momento, Receta } from './tipos'
+import type { Congelado, EntradaPlan, EstadoBatch, Ingrediente, Momento, Receta } from './tipos'
+import { racionesDeBase } from './nutricion'
 import { aguantaNevera, NEVERA_POR_DEFECTO } from './generador'
 import { indiceDia } from './semana'
 
@@ -39,6 +40,8 @@ export function sesionDomingo(
   recetas: Map<string, Receta>,
   estado: Record<string, EstadoBatch>,
   congelados: Congelado[],
+  /** para pasar a raciones las bases puestas en gramos */
+  ingredientes: Map<string, Ingrediente> = new Map(),
 ): ItemBatch[] {
   const usos = new Map<string, UsoBatch[]>()
   const destino = (r: Receta, fecha: string): UsoBatch['destino'] => (aguantaNevera(r, indiceDia(lunes, fecha)) || !r.congelable ? 'nevera' : 'congelador')
@@ -53,7 +56,7 @@ export function sesionDomingo(
     for (const l of r.ingredientes) {
       const sub = l.sub_recipe_id ? recetas.get(l.sub_recipe_id) : undefined
       if (!sub) continue
-      const rac = (l.cantidad ?? 1) * mult
+      const rac = (racionesDeBase(l, sub, ingredientes, recetas) ?? 1) * mult
       anadir(sub, { fecha: e.fecha, momento: e.momento, raciones: rac, plato: r.titulo })
       bases(sub, rac, e, new Set([...visitadas, r.id]))
     }
