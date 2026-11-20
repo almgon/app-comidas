@@ -323,3 +323,45 @@ input.mini-num { width: 70px; padding: .35rem .4rem; }
 .lista-simple { list-style: none; padding: 0; margin: .4rem 0 0; display: flex; flex-direction: column; gap: .55rem; }
 .lista-simple li { padding-bottom: .5rem; border-bottom: 1px solid var(--borde); gap: .5rem; }
 .lista-simple li:last-child { border-bottom: none; }
+
+/* Método del plato (colores validados para daltonismo; siempre con leyenda y % escritos) */
+:root { --p-verdura: #1baf7a; --p-proteina: #e87ba4; --p-hidratos: #eda100; --p-grasa: #2a78d6; }
+@media (prefers-color-scheme: dark) {
+  :root { --p-verdura: #199e70; --p-proteina: #dd6e99; --p-hidratos: #c98500; --p-grasa: #3987e5; }
+}
+.tarta { flex: none; }
+.tarta .porcion { stroke: var(--tarjeta); stroke-linejoin: round; }
+.tarta .tarta-vacia { fill: var(--fondo); stroke: var(--borde); }
+.tarta .tarta-guia { stroke: var(--texto); stroke-opacity: .35; stroke-width: 1; stroke-dasharray: 3 3; fill: none; pointer-events: none; }
+.p-verdura { fill: var(--p-verdura); background: var(--p-verdura); }
+.p-proteina { fill: var(--p-proteina); background: var(--p-proteina); }
+.p-hidratos { fill: var(--p-hidratos); background: var(--p-hidratos); }
+.p-grasa { fill: var(--p-grasa); background: var(--p-grasa); }
+.plato-metodo h3 { margin: 0 0 .4rem; font-size: 1rem; }
+.plato-fila { display: flex; gap: 1rem; align-items: center; }
+.leyenda-plato { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .3rem; font-size: .9rem; flex: 1; min-width: 0; }
+.leyenda-plato li { display: grid; grid-template-columns: 12px 1fr auto; column-gap: .4rem; align-items: center; }
+.leyenda-plato .muestra { width: 12px; height: 12px; border-radius: 3px; }
+.leyenda-plato b { text-align: right; }
+.leyenda-plato small { grid-column: 2 / 4; color: var(--suave); font-size: .72rem; }
+.leyenda-plato small.fuera { color: var(--ambar); }
+.estado-plato { margin: .6rem 0 .2rem; font-weight: 600; font-size: .9rem; }
+.estado-plato.plato-cumple { color: #1d6b3d; }
+.estado-plato.plato-casi { color: var(--ambar); }
+.estado-plato.plato-no { color: var(--rojo); }
+@media (prefers-color-scheme: dark) {
+  .estado-plato.plato-cumple { color: #7fd3a0; }
+}
+.pequeno { font-size: .75rem; }
+.chip.plato-cumple { background: #dff3e6; border-color: #b5e0c4; color: #1d6b3d; }
+.chip.plato-casi { background: #fff6e0; border-color: #f0d28a; color: #6b4e00; }
+.chip.plato-no { background: #fdecea; border-color: #f2c1ba; color: #8a2318; }
+.boton-tarta { display: inline-flex; align-items: center; gap: .3rem; background: none; border: 0; padding: 0; cursor: pointer; color: inherit; font: inherit; }
+.momento-col { display: flex; flex-direction: column; align-items: flex-start; gap: .25rem; }
+.detalle-plato-hueco { background: var(--fondo); border-radius: 10px; padding: .6rem; margin-top: .3rem; }
+.origen-plato { margin-top: .6rem; font-size: .85rem; }
+.origen-plato summary { cursor: pointer; color: var(--verde); }
+.origen-plato table { width: 100%; border-collapse: collapse; margin-top: .4rem; }
+.origen-plato td { padding: .2rem .2rem; border-bottom: 1px solid var(--borde); vertical-align: middle; }
+.origen-plato select { padding: .2rem .3rem; font-size: .85rem; width: auto; }
+.mini-select { padding: .15rem .25rem; font-size: .8rem; width: auto; max-width: 110px; }

@@ -11,6 +11,8 @@ import { fmt } from '../lib/nutricion'
 import { ORIGENES, etiquetaGrupo, racionesHogar, type Comensal, type EntradaPlan, type Momento } from '../lib/tipos'
 import SelectorSemana, { EnlacesSemana } from '../components/SelectorSemana'
 import SelectorPlato from '../components/SelectorPlato'
+import TartaPlato, { Tarta } from '../components/TartaPlato'
+import { evaluarPlato, repartoHueco, tipoRangos } from '../lib/plato'
 
 const NOMBRE_MOMENTO: Record<Momento, string> = { desayuno: 'Desayuno', comida: 'Comida', cena: 'Cena' }
 const clave = (e: Pick<EntradaPlan, 'fecha' | 'momento' | 'orden'>) => `${e.fecha}|${e.momento}|${ordenDe(e)}`
@@ -33,6 +35,7 @@ export default function Menu() {
   const [generando, setGenerando] = useState(false)
   const [verAvisos, setVerAvisos] = useState(false)
   const [detalleDia, setDetalleDia] = useState<string | null>(null)
+  const [verPlato, setVerPlato] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const fechas = fechasSemana(lunes)
@@ -59,6 +62,25 @@ export default function Menu() {
     const s = (k: 'kcal' | 'proteina') => dias.reduce((t, d) => t + d.macros[k], 0) / dias.length
     return { kcal: s('kcal'), proteina: s('proteina'), dias: dias.length }
   }
+  // Método del plato de cada desayuno, comida y cena (todas sus recetas y alimentos sueltos juntos)
+  const platoHueco = (fecha: string, momento: Momento) => {
+    const lista = delHueco(fecha, momento)
+    if (!lista.some((e) => e.recipe_id || e.extras?.length) || lista.some((e) => e.origen === 'libre')) return null
+    return repartoHueco(lista, ctx.platos ?? new Map(), mapaIngredientes, factorHogar)
+  }
+  const resumenPlato = useMemo(() => {
+    const r = { cumple: 0, casi: 0, no: 0, total: 0 }
+    for (const f of fechas)
+      for (const m of MOMENTOS_DIA) {
+        const lista = semana.entradas.filter((e) => e.fecha === f && e.momento === m)
+        if (!lista.some((e) => e.recipe_id) || lista.some((e) => e.origen === 'libre')) continue
+        const ev = evaluarPlato(repartoHueco(lista, ctx.platos ?? new Map(), mapaIngredientes, factorHogar), tipoRangos(m))
+        if (ev.estado === 'sin_datos') continue
+        r.total++
+        r[ev.estado]++
+      }
+    return r
+  }, [fechas, semana.entradas, ctx.platos, mapaIngredientes, factorHogar])
   const sinDatos = useMemo(() => new Set(semana.entradas.filter((e) => e.recipe_id && !ctx.macros?.get(e.recipe_id)).map((e) => e.recipe_id)).size, [semana.entradas, ctx.macros])
 
   // Bases que se reutilizan en varios platos de la semana
@@ -149,6 +171,15 @@ export default function Menu() {
             )
           })}
         </div>
+        {resumenPlato.total > 0 && (
+          <div className="semaforos">
+            <div className={`semaforo ${resumenPlato.cumple === resumenPlato.total ? 'verde' : resumenPlato.no === 0 ? 'ambar' : 'rojo'}`}>
+              <span>🍽️ Método del plato <small>(½ verdura y fruta, ¼ proteína, ¼ hidratos)</small></span>
+              <b>{resumenPlato.cumple} de {resumenPlato.total} cumplen{resumenPlato.casi ? ` · ${resumenPlato.casi} casi` : ''}</b>
+              <small>Toca la tarta de cada comida para ver el reparto</small>
+            </div>
+          </div>
+        )}
         {sinDatos > 0 && <p className="suave">{sinDatos} receta{sinDatos === 1 ? '' : 's'} del menú sin kcal (faltan ingredientes vinculados o sus datos): los totales se quedan cortos.</p>}
       </section>
 
@@ -200,9 +231,20 @@ export default function Menu() {
               const anadidas = lista.filter((e) => ordenDe(e) > 0)
               const siguiente = Math.max(0, ...lista.map(ordenDe)) + 1
               const puedeAnadir = principal && principal.origen !== 'libre' && (principal.recipe_id || principal.extras?.length)
+              const reparto = platoHueco(fecha, momento)
+              const ev = evaluarPlato(reparto, tipoRangos(momento))
+              const kPlato = `${fecha}|${momento}`
               return (
                 <div key={momento} className={`hueco ${principal?.fijado ? 'fijado' : ''}`}>
-                  <span className="momento">{NOMBRE_MOMENTO[momento]}</span>
+                  <span className="momento momento-col">
+                    {NOMBRE_MOMENTO[momento]}
+                    {reparto && ev.estado !== 'sin_datos' && (
+                      <button className="boton-tarta" onClick={() => setVerPlato(verPlato === kPlato ? null : kPlato)} title="Método del plato" aria-label={`Método del plato: ${ev.estado === 'cumple' ? 'cumple' : ev.estado === 'casi' ? 'casi cumple' : 'no cumple'}`}>
+                        <Tarta reparto={reparto} size={26} mini />
+                        <span className={`chip plato-${ev.estado}`}>{ev.estado === 'cumple' ? '✓' : ev.estado === 'casi' ? '≈' : '✗'}</span>
+                      </button>
+                    )}
+                  </span>
                   <div className="plato">
                     <Plato
                       e={principal}
@@ -227,6 +269,11 @@ export default function Menu() {
                         </div>
                       </div>
                     ))}
+                    {verPlato === kPlato && reparto && (
+                      <div className="detalle-plato-hueco">
+                        <TartaPlato reparto={reparto} tipo={tipoRangos(momento)} titulo={`Método del plato · ${NOMBRE_MOMENTO[momento].toLowerCase()} completo${lista.filter((e) => e.recipe_id).length > 1 ? ` (${lista.filter((e) => e.recipe_id).length} recetas)` : ''}`} />
+                      </div>
+                    )}
                     {puedeAnadir && (
                       <button className="enlace anadir-receta" onClick={() => setEligiendo({ fecha, momento, orden: siguiente })}>
                         + Añadir otra receta

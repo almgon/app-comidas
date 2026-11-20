@@ -4,6 +4,8 @@ import { esComidaDeBatch, opcionesHueco, ordenDe, problemasEntrada, type Context
 import { useDatos } from '../lib/datos'
 import { DIAS, fechasSemana, fechaCorta } from '../lib/semana'
 import { fmt } from '../lib/nutricion'
+import { ChipPlato } from './TartaPlato'
+import { repartoHueco, tipoRangos } from '../lib/plato'
 import { ORIGENES, etiquetaGrupo, tiempoTotal, type EntradaPlan, type Extra, type Momento, type Origen } from '../lib/tipos'
 
 interface Props {
@@ -61,6 +63,13 @@ export default function SelectorPlato({ hueco, ctx, actual, delDia, entradas, on
     origen: o.origen, freezer_item_id: o.freezer_item_id, fijado: true, nota: null, extras: actual?.extras ?? [],
   })
 
+  // Método del plato: cómo queda el hueco entero con cada receta
+  const { mapaIngredientes } = useDatos()
+  const factorHogar = ctx.comensales.reduce((t, c) => t + c.factor, 0) || 1
+  const restoHueco = delDia.filter((e) => e.momento === hueco.momento && ordenDe(e) !== hueco.orden)
+  const platoCon = (id: string) =>
+    ctx.platos ? repartoHueco([...restoHueco, { recipe_id: id, origen: 'fresco', extras: anadida ? [] : actual?.extras ?? [] }], ctx.platos, mapaIngredientes, factorHogar) : null
+
   const fila = (o: Opcion, conProblemas = false) => {
     const r = recetas.get(o.recipe_id)!
     const g = etiquetaGrupo(r.grupo_proteico)
@@ -79,6 +88,7 @@ export default function SelectorPlato({ hueco, ctx, actual, delDia, entradas, on
             {t != null && <span className="chip">⏱ {t} min</span>}
             {m && <span className="chip">🔥 {fmt(m.kcal)} kcal</span>}
             {p != null && <span className="chip">💪 {fmt(p)} g</span>}
+            <ChipPlato reparto={platoCon(r.id)} tipo={tipoRangos(hueco.momento)} texto={false} />
             <span className="chip">{ORIGENES[o.origen].emoji} {o.origen === 'congelador' && c ? `${fmt(c.raciones, 1)} rac. · ${fechaCorta(c.congelado_en)}` : ORIGENES[o.origen].etiqueta}</span>
             {n > 0 && <span className="chip">ya {n}× esta semana</span>}
             {problemas.map((x) => (
@@ -111,6 +121,7 @@ export default function SelectorPlato({ hueco, ctx, actual, delDia, entradas, on
           </div>
         )}
         <input type="search" placeholder="Buscar receta…" value={q} onChange={(e) => setQ(e.target.value)} />
+        {ctx.platos && <p className="suave pequeno">🍽️ ✓ cumple · ≈ casi · ✗ no: cómo queda {anadida || restoHueco.length ? 'todo el hueco' : 'el hueco'} con esa receta según el método del plato.</p>}
         <ul className="opciones-plato">
           {congelador.length > 0 && <li className="grupo">❄️ En el congelador</li>}
           {congelador.map((o) => fila(o))}
