@@ -5,7 +5,9 @@ import { fmt, nutricionPorRacion, pesoReceta } from '../lib/nutricion'
 import { useMenu } from '../lib/menu'
 import TartaPlato, { ChipPlato } from '../components/TartaPlato'
 import { GRUPOS_PLATO, grupoInferido, platoPorRacion, tipoRangos, type GrupoPlato } from '../lib/plato'
-import { aptaCenaRapida, etiquetaGrupo, etiquetaTipo, tiempoTotal } from '../lib/tipos'
+import { PAPELES, aptaCenaRapida, etiquetaGrupo, etiquetaTipo, papelDe, tiempoTotal } from '../lib/tipos'
+import { porcionesPorRacion } from '../lib/grupos'
+import { ChipsRaciones } from '../components/Raciones'
 
 const FUENTES: Record<string, string> = { web: 'Web', instagram: 'Instagram', tiktok: 'TikTok', texto: 'Texto pegado', manual: 'Manual' }
 
@@ -29,6 +31,7 @@ export default function RecetaDetalle() {
   const [raciones, setRaciones] = useState<number | null>(null)
   const [hechos, setHechos] = useState<Set<number>>(new Set())
   const [errorGrupo, setErrorGrupo] = useState<string | null>(null)
+  const [errorPapel, setErrorPapel] = useState<string | null>(null)
   const { enlaces } = useMenu()
 
   if (!receta) return <p className="vacio">No encuentro esta receta. <Link to="/recetas">Volver</Link></p>
@@ -37,6 +40,8 @@ export default function RecetaDetalle() {
   const factor = rac / receta.raciones
   const n = nutricionPorRacion(receta, mapaIngredientes, mapaRecetas)
   const plato = platoPorRacion(receta, mapaIngredientes, mapaRecetas)
+  const porciones = porcionesPorRacion(receta, mapaIngredientes, mapaRecetas).porciones
+  const conPapel = !receta.es_base && receta.tipo_comida !== 'desayuno'
   const tipoPlato = tipoRangos('receta', receta)
   const g = etiquetaGrupo(receta.grupo_proteico)
   const t = tiempoTotal(receta)
@@ -65,7 +70,9 @@ export default function RecetaDetalle() {
         {receta.es_base && <span className="chip base">Preparación base</span>}
         <span className="chip">{etiquetaTipo(receta.tipo_comida)}</span>
         {g && <span className={`chip g-${g.valor}`}>{g.emoji} {g.etiqueta}</span>}
-        {!receta.es_base && <ChipPlato reparto={plato.reparto} tipo={tipoPlato} />}
+        {conPapel && <span className="chip">{PAPELES.find((p) => p.valor === papelDe(receta))!.emoji} {PAPELES.find((p) => p.valor === papelDe(receta))!.etiqueta}</span>}
+        <ChipsRaciones p={porciones} />
+        {!receta.es_base && (!conPapel || papelDe(receta) === 'completo') && <ChipPlato reparto={plato.reparto} tipo={tipoPlato} />}
         {aptaCenaRapida(receta) && <span className="chip rapida">Cena entre semana</span>}
         {receta.congelable && <span className="chip">❄️ Congelable</span>}
         {receta.dias_nevera != null && <span className="chip">🧊 {receta.dias_nevera} días en nevera</span>}
@@ -73,6 +80,24 @@ export default function RecetaDetalle() {
           <span key={e} className="chip etiqueta">#{e}</span>
         ))}
       </div>
+
+      {conPapel && (
+        <div className="segmentado ancho margen-arriba" role="group" aria-label="Papel en el menú">
+          {PAPELES.map((p) => (
+            <button
+              key={p.valor}
+              className={papelDe(receta) === p.valor ? 'on' : ''}
+              onClick={() => {
+                setErrorPapel(null)
+                actualizarReceta(receta.id, { papel: p.valor }).catch((e) => setErrorPapel(e.message))
+              }}
+            >
+              {p.emoji} {p.etiqueta}
+            </button>
+          ))}
+        </div>
+      )}
+      {errorPapel && <p className="error">{errorPapel}</p>}
 
       <div className="valoracion">
         {[1, 2, 3, 4, 5].map((v) => (
@@ -129,7 +154,12 @@ export default function RecetaDetalle() {
       )}
       {n.manual && <p className="suave">Proteína introducida a mano.</p>}
 
-      <section className="tarjeta">
+      {conPapel && papelDe(receta) !== 'completo' ? (
+        <p className="suave">
+          {papelDe(receta) === 'principal' ? '🍗 Es un principal: en el menú se acompaña de guarniciones' : '🥗 Es una guarnición: en el menú acompaña a un principal'}, y el equilibrio se mira en el día entero (raciones de verdura, hidratos y lácteos).
+        </p>
+      ) : null}
+      <section className="tarjeta" hidden={conPapel && papelDe(receta) !== 'completo'}>
         <TartaPlato
           reparto={plato.reparto}
           tipo={tipoPlato}

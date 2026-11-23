@@ -3,25 +3,31 @@ import { Link } from 'react-router-dom'
 import { normalizar } from '../../shared/parser.js'
 import { useDatos } from '../lib/datos'
 import TarjetaReceta from '../components/TarjetaReceta'
-import { GRUPOS_PROTEICOS, tiempoTotal, type GrupoProteico, type Receta } from '../lib/tipos'
+import { GRUPOS_PROTEICOS, papelDe, tiempoTotal, type GrupoProteico, type Receta } from '../lib/tipos'
 import { useMenu } from '../lib/menu'
 import { evaluarPlato, platoPorRacion, tipoRangos, type EstadoPlato } from '../lib/plato'
 
 type Orden = 'titulo' | 'reciente' | 'valoracion' | 'tiempo'
-type Apartado = 'todas' | 'desayuno' | 'comida' | 'cena' | 'base'
+type Apartado = 'todas' | 'desayuno' | 'comida' | 'cena' | 'guarnicion' | 'base'
 
 const APARTADOS: { valor: Apartado; etiqueta: string }[] = [
   { valor: 'todas', etiqueta: 'Todas' },
   { valor: 'desayuno', etiqueta: '☕ Desayunos' },
   { valor: 'comida', etiqueta: '🍽️ Comidas' },
   { valor: 'cena', etiqueta: '🌙 Cenas' },
+  { valor: 'guarnicion', etiqueta: '🥗 Guarniciones' },
   { valor: 'base', etiqueta: '🥣 Bases' },
 ]
 
-/** En qué apartado sale cada receta (las de «comida o cena» salen en los dos; las bases, aparte) */
-const enApartado = (r: Receta, a: Apartado) =>
-  a === 'todas' ||
-  (a === 'base' ? r.es_base : !r.es_base && (r.tipo_comida === a || (r.tipo_comida === 'ambas' && (a === 'comida' || a === 'cena'))))
+/** En qué apartado sale cada receta (las de «comida o cena» salen en los dos; las bases y las guarniciones, aparte) */
+const enApartado = (r: Receta, a: Apartado) => {
+  if (a === 'todas') return true
+  if (a === 'base') return r.es_base
+  if (r.es_base) return false
+  const guarn = r.tipo_comida !== 'desayuno' && papelDe(r) === 'guarnicion'
+  if (a === 'guarnicion') return guarn
+  return !guarn && (r.tipo_comida === a || (r.tipo_comida === 'ambas' && (a === 'comida' || a === 'cena')))
+}
 
 const CLAVE_APARTADO = 'comidas-recetas-apartado'
 

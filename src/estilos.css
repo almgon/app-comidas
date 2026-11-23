@@ -48,7 +48,7 @@ label.check input { width: auto; }
   background: color-mix(in srgb, var(--tarjeta) 92%, transparent); backdrop-filter: blur(12px);
   border-top: 1px solid var(--borde); padding: .4rem 0 calc(.4rem + env(safe-area-inset-bottom)); z-index: 10;
 }
-.pestanas a { display: flex; flex-direction: column; align-items: center; font-size: .7rem; color: var(--suave); text-decoration: none; min-width: 64px; }
+.pestanas a { display: flex; flex-direction: column; align-items: center; font-size: .68rem; color: var(--suave); text-decoration: none; min-width: 52px; flex: 1; }
 .pestanas a span { font-size: 1.35rem; }
 .pestanas a.active { color: var(--verde); font-weight: 600; }
 
@@ -365,3 +365,31 @@ input.mini-num { width: 70px; padding: .35rem .4rem; }
 .origen-plato td { padding: .2rem .2rem; border-bottom: 1px solid var(--borde); vertical-align: middle; }
 .origen-plato select { padding: .2rem .3rem; font-size: .85rem; width: auto; }
 .mini-select { padding: .15rem .25rem; font-size: .8rem; width: auto; max-width: 110px; }
+
+/* Raciones por grupo (verdura, hidratos, lácteos) con semáforo */
+.chip.racion-verde { background: #dff3e6; border-color: #b5e0c4; color: #1d6b3d; }
+.chip.racion-ambar { background: #fff6e0; border-color: #f0d28a; color: #6b4e00; }
+.chip.racion-rojo { background: #fde8e6; border-color: #f2b8b2; color: #8a1f14; }
+@media (prefers-color-scheme: dark) {
+  .chip.racion-verde { background: #1f3a2a; color: #a6e0bb; border-color: #2d5a3d; }
+  .chip.racion-ambar { background: #3a3010; color: #f3dc9c; border-color: #5a4a18; }
+  .chip.racion-rojo { background: #3d1c19; color: #f2b8b2; border-color: #5e2a25; }
+}
+.raciones-dia { display: block; margin: .2rem 0 .3rem; text-align: left; }
+.chip.cocina { background: #e8f0fe; border-color: #c3d5fa; color: #1c4aa0; }
+@media (prefers-color-scheme: dark) { .chip.cocina { background: #1b2a45; color: #b8cdf5; border-color: #2c4370; } }
+.congelar-extra { display: flex; flex-direction: column; gap: .3rem; margin: .5rem 0; font-size: .9rem; }
+
+/* Hoy y mañana */
+.aviso-descongelar { font-size: .95rem; }
+.hueco-hoy { display: grid; grid-template-columns: 5.5rem 1fr; gap: .5rem; padding: .55rem 0; border-top: 1px solid var(--borde); }
+.hueco-hoy:first-of-type { border-top: none; }
+.hueco-hoy .plato { display: flex; flex-direction: column; gap: .25rem; }
+.congelar-hoy { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; font-size: .9rem; margin-top: .2rem; }
+
+/* Compra: lo que ya hay en casa */
+.lista-compra li.en-casa .nombre { opacity: .6; }
+.boton.ancho { width: 100%; }
+.hueco-hoy .momento { font-size: .75rem; color: var(--suave); text-transform: uppercase; letter-spacing: .03em; padding-top: .15rem; }
+.segmentado.ancho { flex-wrap: wrap; }
+.hueco-hoy .chip, .plato-linea .chip.cocina { white-space: normal; }

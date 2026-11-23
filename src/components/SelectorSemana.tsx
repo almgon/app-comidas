@@ -21,7 +21,7 @@ export default function SelectorSemana({ lunes, onCambiar }: { lunes: string; on
 export function EnlacesSemana({ lunes, actual }: { lunes: string; actual: 'menu' | 'domingo' | 'compra' | 'congelador' }) {
   const q = `?semana=${lunes}`
   const enlaces = [
-    { k: 'menu', to: `/${q}`, t: '🗓️ Menú' },
+    { k: 'menu', to: `/menu${q}`, t: '🗓️ Menú' },
     { k: 'domingo', to: `/domingo${q}`, t: '🍲 Domingo' },
     { k: 'congelador', to: `/congelador${q}`, t: '❄️ Congelador' },
   ]

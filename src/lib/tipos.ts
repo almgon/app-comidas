@@ -3,6 +3,16 @@ export type GrupoProteico = 'legumbre' | 'pescado_blanco' | 'pescado_azul' | 'ca
 /** Grupo del método del plato: verdura y fruta, proteína, hidratos, grasa saludable u «otro» (no cuenta) */
 export type GrupoPlato = 'verdura' | 'proteina' | 'hidratos' | 'grasa' | 'otro'
 export type FuenteTipo = 'web' | 'instagram' | 'tiktok' | 'texto' | 'manual'
+/** Papel de una receta en el menú: plato completo (lentejas), principal (pollo a la plancha) o guarnición (arroz, verduras) */
+export type Papel = 'completo' | 'principal' | 'guarnicion'
+
+export const PAPELES: { valor: Papel; etiqueta: string; emoji: string; ayuda: string }[] = [
+  { valor: 'completo', etiqueta: 'Plato completo', emoji: '🍲', ayuda: 'Se come solo: lentejas, macarrones con boloñesa…' },
+  { valor: 'principal', etiqueta: 'Principal', emoji: '🍗', ayuda: 'Se acompaña de guarniciones: filete de pollo, merluza a la plancha…' },
+  { valor: 'guarnicion', etiqueta: 'Guarnición', emoji: '🥗', ayuda: 'Acompaña a un principal: arroz, patatas, quinoa, verduras asadas…' },
+]
+export const etiquetaPapel = (p: Papel | null | undefined) => PAPELES.find((x) => x.valor === (p ?? 'completo'))!
+export const papelDe = (r: Pick<Receta, 'papel'>): Papel => r.papel ?? 'completo'
 
 export const TIPOS_COMIDA: { valor: TipoComida; etiqueta: string }[] = [
   { valor: 'ambas', etiqueta: 'Comida o cena' },
@@ -83,6 +93,8 @@ export interface Receta {
   tipo_comida: TipoComida
   grupo_proteico: GrupoProteico | null
   es_base: boolean
+  /** papel en el menú (migración 010; si falta, plato completo) */
+  papel?: Papel
   congelable: boolean
   dias_nevera: number | null
   valoracion: number | null
@@ -115,11 +127,12 @@ export const aptaCenaRapida = (r: Pick<Receta, 't_prep_min' | 't_coccion_min'>) 
 // Fase 2: menú, desayunos, congelador y compra
 // =========================================================
 export type Momento = 'desayuno' | 'comida' | 'cena'
-export type Origen = 'fresco' | 'batch' | 'congelador' | 'libre'
+export type Origen = 'fresco' | 'batch' | 'sobras' | 'congelador' | 'libre'
 
 export const ORIGENES: Record<Origen, { etiqueta: string; emoji: string }> = {
   fresco: { etiqueta: 'Se cocina ese día', emoji: '🔥' },
   batch: { etiqueta: 'Cocinado el domingo', emoji: '🍲' },
+  sobras: { etiqueta: 'Sobras de la cena de ayer', emoji: '🥡' },
   congelador: { etiqueta: 'Del congelador', emoji: '❄️' },
   libre: { etiqueta: 'Hueco libre (fuera de casa)', emoji: '🚶' },
 }
@@ -138,6 +151,10 @@ export interface EntradaPlan {
   nota: string | null
   /** alimentos sueltos que se añaden a ese hueco (cantidad total para el hogar, en la unidad base) */
   extras?: Extra[]
+  /** raciones de más que se cocinan para congelar (para otra semana) */
+  cocinar_extra?: number
+  /** las raciones de más ya están en el congelador */
+  extra_congelado?: boolean
 }
 
 export interface Extra {
@@ -195,6 +212,8 @@ export interface ArticuloCompra {
   es_despensa: boolean
   manual: boolean
   comprado: boolean
+  /** ya lo tenéis en casa: no hace falta comprarlo */
+  tengo?: boolean
   comprado_por: string | null
   comprado_en: string | null
 }

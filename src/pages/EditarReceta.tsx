@@ -12,11 +12,13 @@ import SelectorProducto from '../components/SelectorProducto'
 import NuevoIngrediente from '../components/NuevoIngrediente'
 import {
   GRUPOS_PROTEICOS,
+  PAPELES,
   TIPOS_COMIDA,
   etiquetaGrupo,
   type FuenteTipo,
   type GrupoProteico,
   type Ingrediente,
+  type Papel,
   type Receta,
   type RecetaBorrador,
   type TipoComida,
@@ -40,6 +42,7 @@ interface Formulario {
   tipo_comida: TipoComida
   grupo_proteico: GrupoProteico | ''
   es_base: boolean
+  papel: Papel
   congelable: boolean
   dias_nevera: string
   valoracion: number | null
@@ -74,6 +77,7 @@ const VACIO: Formulario = {
   tipo_comida: 'ambas',
   grupo_proteico: '',
   es_base: false,
+  papel: 'completo',
   congelable: false,
   dias_nevera: '3',
   valoracion: null,
@@ -98,6 +102,7 @@ function desdeReceta(r: Receta): Formulario {
     tipo_comida: r.tipo_comida,
     grupo_proteico: r.grupo_proteico ?? '',
     es_base: r.es_base,
+    papel: r.papel ?? 'completo',
     congelable: r.congelable,
     dias_nevera: str(r.dias_nevera),
     valoracion: r.valoracion,
@@ -248,6 +253,7 @@ export default function EditarReceta() {
     tipo_comida: f.tipo_comida,
     grupo_proteico: f.grupo_proteico || null,
     es_base: f.es_base,
+    papel: f.es_base || f.tipo_comida === 'desayuno' ? 'completo' : f.papel,
     congelable: f.congelable,
     dias_nevera: entero(f.dias_nevera),
     valoracion: f.valoracion,
@@ -294,7 +300,7 @@ export default function EditarReceta() {
   async function enviar(e: FormEvent) {
     e.preventDefault()
     if (!f.titulo.trim()) return setError('Ponle un título a la receta')
-    if (!f.es_base && !f.grupo_proteico) return setError('Elige el grupo proteico principal (lo usa el planificador)')
+    if (!f.es_base && !f.grupo_proteico && !(f.papel === 'guarnicion' && f.tipo_comida !== 'desayuno')) return setError('Elige el grupo proteico principal (lo usa el planificador)')
     setError(null)
     setGuardando(true)
     try {
@@ -374,8 +380,26 @@ export default function EditarReceta() {
             ))}
           </div>
         </label>
+        {!f.es_base && f.tipo_comida !== 'desayuno' && (
+          <label>
+            En el menú
+            <div className="segmentado">
+              {PAPELES.map((p) => (
+                <button type="button" key={p.valor} className={f.papel === p.valor ? 'on' : ''} onClick={() => set('papel', p.valor)}>
+                  {p.emoji} {p.etiqueta}
+                </button>
+              ))}
+            </div>
+            <span className="suave pequeno">{PAPELES.find((p) => p.valor === f.papel)!.ayuda}</span>
+            {f.papel === 'guarnicion' && (
+              <span className="suave pequeno">
+                Para una guarnición sencilla basta con el ingrediente y los gramos de 1 ración (por ejemplo, 1 ración: 70 g de arroz). Los pasos son opcionales.
+              </span>
+            )}
+          </label>
+        )}
         <label>
-          Grupo proteico principal {f.es_base ? '(opcional en bases)' : ''}
+          Grupo proteico principal {f.es_base ? '(opcional en bases)' : f.papel === 'guarnicion' && f.tipo_comida !== 'desayuno' ? '(opcional en guarniciones)' : ''}
           <div className="opciones-grupo">
             {GRUPOS_PROTEICOS.map((g) => (
               <button type="button" key={g.valor} className={`chip g-${g.valor} ${f.grupo_proteico === g.valor ? 'on' : ''}`} onClick={() => set('grupo_proteico', f.grupo_proteico === g.valor ? '' : g.valor)}>

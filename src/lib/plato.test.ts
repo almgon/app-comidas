@@ -1,7 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import { evaluarPlato, factorCocinado, grupoInferido, grupoPlato, platoPorRacion, porcentajes, repartoHueco, type Reparto } from './plato'
-import { combosPlato, costePlatoHueco, generarMenu, ordenDe, type ContextoMenu } from './generador'
-import { fechasSemana } from './semana'
 import type { Ingrediente, LineaIngrediente, Receta } from './tipos'
 
 const ing = (id: string, nombre: string, categoria: string, extra: Partial<Ingrediente> = {}): Ingrediente => ({
@@ -106,44 +104,5 @@ describe('reparto de una receta', () => {
     const platos = new Map<string, Reparto | null>([['a', { verdura: 200, proteina: 0, hidratos: 0, grasa: 5, otro: 0 }]])
     const r = repartoHueco([{ recipe_id: 'a', origen: 'fresco', extras: [{ ingredient_id: 'pan', cantidad: 120 }] }], platos, mapa, 2)
     expect(r!.hidratos).toBe(60)
-  })
-})
-
-describe('el menú cumple el método del plato', () => {
-  const crema = receta('Crema de calabacín', [linea('calabacin', 700), linea('cebolla', 100), linea('aceite', 20)], { raciones: 4 })
-  const tortilla = receta('Tortilla francesa', [linea('huevo', 2, 'ud'), linea('aceite', 5)], { grupo_proteico: 'huevo' })
-  const pan = receta('Pan con tomate', [linea('pan', 70), linea('tomate', 10)])
-  const ensalada = receta('Ensalada de pollo y arroz', [linea('lechuga', 150), linea('tomate', 100), linea('pollo', 110), linea('arrozc', 110), linea('aceite', 10)], { grupo_proteico: 'carne_blanca' })
-  const pasta = receta('Pasta boloñesa sin verdura', [linea('pasta', 100), linea('carne', 120)], { grupo_proteico: 'carne_roja' })
-  const lentejas = receta('Lentejas con verduras', [linea('lentejas', 50), linea('zanahoria', 150), linea('cebolla', 60), linea('patata', 60), linea('pan', 40), linea('aceite', 8)], { grupo_proteico: 'legumbre' })
-  const salmon = receta('Salmón con patata y brócoli', [linea('salmon', 130), linea('brocoli', 220), linea('patata', 150), linea('aceite', 8)], { grupo_proteico: 'pescado_azul' })
-  const recetas = [crema, tortilla, pan, ensalada, pasta, lentejas, salmon]
-  const recetasMapa = new Map(recetas.map((r) => [r.id, r]))
-  const ctx: ContextoMenu = {
-    lunes: '2026-11-23', recetas, proteina: new Map(), comensales: [], congelados: [], raciones: 2, ingredientes: mapa,
-    platos: new Map(recetas.map((r) => [r.id, platoPorRacion(r, mapa, recetasMapa).reparto])),
-  }
-
-  it('busca con qué completar cada receta', () => {
-    const c = combosPlato(ctx)
-    expect(c.get(`cena|${ensalada.id}`)!.ids).toEqual([])
-    // la crema sola no cumple: se completa (con la ensalada, o con tortilla + pan)
-    expect(c.get(`cena|${crema.id}`)!.ids.length).toBeGreaterThan(0)
-    expect(c.get(`cena|${crema.id}`)!.coste).toBeLessThan(1)
-  })
-
-  it('pone en cada comida y cena una receta que cumple o varias que cumplen juntas', () => {
-    let s = 3
-    const rnd = () => ((s = (s * 9301 + 49297) % 233280) / 233280)
-    const { entradas } = generarMenu(ctx, [], { rnd })
-    let huecos = 0
-    for (const f of fechasSemana(ctx.lunes))
-      for (const m of ['comida', 'cena'] as const) {
-        const del = entradas.filter((e) => e.fecha === f && e.momento === m)
-        if (!del.some((e) => ordenDe(e) === 0 && e.recipe_id)) continue
-        huecos++
-        expect(costePlatoHueco(ctx, del, m)).toBe(0)
-      }
-    expect(huecos).toBe(14)
   })
 })

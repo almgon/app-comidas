@@ -49,7 +49,7 @@ export default function Domingo() {
 
       {items.length === 0 ? (
         <p className="vacio">
-          No hay nada que cocinar el domingo para esta semana. <Link to={`/?semana=${lunes}`}>Propón el menú</Link> primero.
+          No hay nada que cocinar el domingo para esta semana. <Link to={`/menu?semana=${lunes}`}>Propón el menú</Link> primero.
         </p>
       ) : (
         <>

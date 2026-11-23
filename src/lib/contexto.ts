@@ -3,6 +3,7 @@ import { useDatos } from './datos'
 import { useComensales, useMenu } from './menu'
 import { aMacros, nutricionPorRacion } from './nutricion'
 import { pesoPlato, platoPorRacion } from './plato'
+import { conDatos, porcionesPorRacion } from './grupos'
 import type { ContextoMenu } from './generador'
 import { racionesHogar } from './tipos'
 
@@ -20,8 +21,12 @@ export function useContextoMenu(lunes: string): ContextoMenu {
     })),
     [recetas, mapaIngredientes, mapaRecetas],
   )
+  const porciones = useMemo(
+    () => new Map(recetas.map((r) => [r.id, conDatos(r) ? porcionesPorRacion(r, mapaIngredientes, mapaRecetas).porciones : null])),
+    [recetas, mapaIngredientes, mapaRecetas],
+  )
   return useMemo(
-    () => ({ lunes, recetas, proteina, macros, platos, ingredientes: mapaIngredientes, comensales, congelados, raciones: racionesHogar(comensales) }),
-    [lunes, recetas, proteina, macros, platos, mapaIngredientes, comensales, congelados],
+    () => ({ lunes, recetas, proteina, macros, platos, porciones, ingredientes: mapaIngredientes, comensales, congelados, raciones: racionesHogar(comensales) }),
+    [lunes, recetas, proteina, macros, platos, porciones, mapaIngredientes, comensales, congelados],
   )
 }

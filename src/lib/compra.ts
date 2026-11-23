@@ -3,6 +3,7 @@ import { normalizar } from '../../shared/parser.js'
 import type { ItemBatch } from './batch'
 import { aUnidadBase, cantidadCompra, enEnvases, fmtBase } from './cantidades'
 import { racionesDeBase } from './nutricion'
+import { cenaAnterior } from './generador'
 import type { Comensal, EntradaPlan, Envase, Ingrediente, Receta } from './tipos'
 
 /** Orden de los pasillos (más o menos el recorrido de Mercadona) */
@@ -93,11 +94,14 @@ export function calcularCompra(d: DatosCompra): Necesidad[] {
     }
   }
 
-  // Platos que se cocinan ese mismo día
+  // Platos que se cocinan ese mismo día (con lo que se hace de más para congelar)
+  // y sobras de una cena que se cocina ese día (se hace el doble)
   for (const e of d.entradas) {
-    if (e.origen !== 'fresco' || !e.recipe_id) continue
+    if (!e.recipe_id) continue
     const r = d.recetas.get(e.recipe_id)
-    if (r) expandir(r, e.raciones, r.titulo, new Set())
+    if (!r) continue
+    if (e.origen === 'fresco') expandir(r, e.raciones + (e.cocinar_extra ?? 0), r.titulo, new Set())
+    else if (e.origen === 'sobras' && cenaAnterior(d.entradas, e.fecha, d.lunes)?.origen === 'fresco') expandir(r, e.raciones, r.titulo, new Set())
   }
   // Sesión del domingo (platos y bases, con lo que va al congelador)
   for (const b of d.batch) {

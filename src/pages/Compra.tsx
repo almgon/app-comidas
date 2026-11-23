@@ -24,6 +24,8 @@ export default function Compra() {
   const [envaseDe, setEnvaseDe] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [preciosDe, setPreciosDe] = useState<string | null>(null)
+  const [repaso, setRepaso] = useState(false)
+  const [verTengo, setVerTengo] = useState(false)
 
   const necesidades = useMemo(() => {
     const batch = sesionDomingo(lunes, semana.entradas, mapaRecetas, semana.plan?.batch ?? {}, congelados, mapaIngredientes)
@@ -38,18 +40,20 @@ export default function Compra() {
     return firma(guardados) !== firma(necesidades)
   }, [semana.lista, semana.articulos, necesidades])
 
-  const precios = useMemo(() => totalCompra(semana.articulos, mapaIngredientes, enlaces), [semana.articulos, mapaIngredientes, enlaces])
+  const precios = useMemo(() => totalCompra(semana.articulos.filter((a) => !a.tengo), mapaIngredientes, enlaces), [semana.articulos, mapaIngredientes, enlaces])
   const hayPrecios = precios.conPrecio > 0
   const nombre = (uid: string | null) => miembros.find((m) => m.id === uid)?.nombre
   const articulos = semana.articulos
-  const normales = articulos.filter((a) => !a.es_despensa)
-  const despensa = articulos.filter((a) => a.es_despensa)
+  const normales = articulos.filter((a) => !a.es_despensa && !a.tengo)
+  const despensa = articulos.filter((a) => a.es_despensa && !a.tengo)
+  const enCasa = articulos.filter((a) => a.tengo)
   const pendientes = normales.filter((a) => !a.comprado).length
   const grupos = useMemo(() => {
     const m = new Map<string, ArticuloCompra[]>()
-    for (const a of normales) if (!ocultar || !a.comprado) m.set(a.categoria, [...(m.get(a.categoria) ?? []), a])
+    for (const a of normales) if (repaso || !ocultar || !a.comprado) m.set(a.categoria, [...(m.get(a.categoria) ?? []), a])
     return [...m].sort((a, b) => ordenPasillo(a[0]) - ordenPasillo(b[0]))
-  }, [normales, ocultar])
+  }, [normales, ocultar, repaso])
+  const tengo = (a: ArticuloCompra, v: boolean) => semana.marcarTengo(a, v).catch((e) => setError(e.message))
 
   async function generar() {
     setGenerando(true)
@@ -67,9 +71,13 @@ export default function Compra() {
     const ing = a.ingredient_id ? mapaIngredientes.get(a.ingredient_id) : undefined
     const quien = a.comprado && a.comprado_por !== sesion?.user.id ? nombre(a.comprado_por) : null
     return (
-      <li key={a.id} className={a.comprado ? 'comprado' : ''}>
+      <li key={a.id} className={a.tengo ? 'en-casa' : a.comprado && !repaso ? 'comprado' : ''}>
         <label className="articulo">
-          <input type="checkbox" checked={a.comprado} onChange={(e) => semana.marcar(a, e.target.checked)} />
+          {repaso || a.tengo ? (
+            <input type="checkbox" checked={!!a.tengo} onChange={(e) => tengo(a, e.target.checked)} aria-label="Ya lo tengo" />
+          ) : (
+            <input type="checkbox" checked={a.comprado} onChange={(e) => semana.marcar(a, e.target.checked)} />
+          )}
           <span className="texto">
             <span className="nombre">
               {a.texto} {a.cantidad != null && <b>{textoCantidad(a.cantidad, a.unidad)}</b>}
@@ -127,7 +135,7 @@ export default function Compra() {
             </>
           ) : (
             <p>
-              Todavía no hay menú para esta semana. <Link to={`/?semana=${lunes}`}>Prepara el menú</Link> y vuelve aquí.
+              Todavía no hay menú para esta semana. <Link to={`/menu?semana=${lunes}`}>Prepara el menú</Link> y vuelve aquí.
             </p>
           )}
         </div>
@@ -152,9 +160,13 @@ export default function Compra() {
           ) : (
             <p className="suave margen-arriba">💶 Toca el euro de un producto para enlazarlo con Mercadona y ver cuánto cuesta la compra.</p>
           )}
+          <button className={`boton ancho margen-arriba ${repaso ? 'primario' : ''}`} onClick={() => setRepaso(!repaso)}>
+            {repaso ? '✓ Terminar el repaso' : '🏠 Repasar lo que ya hay en casa'}
+          </button>
+          {repaso && <p className="suave">Marca lo que ya tenéis: sale de la lista (y no vuelve al recalcularla). Cuando acabéis, toca «Terminar el repaso».</p>}
           <div className="fila espacio margen-arriba">
             <label className="check">
-              <input type="checkbox" checked={ocultar} onChange={(e) => setOcultar(e.target.checked)} /> Ocultar lo comprado
+              <input type="checkbox" checked={ocultar} onChange={(e) => setOcultar(e.target.checked)} disabled={repaso} /> Ocultar lo comprado
             </label>
             {!desfasada && <button className="enlace" onClick={generar} disabled={generando}>Recalcular</button>}
           </div>
@@ -162,8 +174,12 @@ export default function Compra() {
             className="fila margen-arriba"
             onSubmit={async (e) => {
               e.preventDefault()
-              await semana.anadirArticulo(nuevo)
-              setNuevo('')
+              try {
+                await semana.anadirArticulo(nuevo)
+                setNuevo('')
+              } catch (x: any) {
+                setError(x.message)
+              }
             }}
           >
             <input placeholder="Añadir algo (papel de cocina…)" value={nuevo} onChange={(e) => setNuevo(e.target.value)} />
@@ -178,12 +194,26 @@ export default function Compra() {
           ))}
           {pendientes === 0 && normales.length > 0 && <p className="ok">🎉 Todo comprado.</p>}
 
+          {enCasa.length > 0 && (
+            <section>
+              <button className="enlace" onClick={() => setVerTengo(!verTengo)}>
+                🏠 Ya lo tenéis en casa ({enCasa.length}) {verTengo ? '▲' : '▼'}
+              </button>
+              {verTengo && (
+                <>
+                  <p className="suave pequeno">Desmarca lo que al final sí haya que comprar.</p>
+                  <ul className="lista-compra">{enCasa.map(fila)}</ul>
+                </>
+              )}
+            </section>
+          )}
+
           {despensa.length > 0 && (
             <section>
               <button className="enlace" onClick={() => setVerDespensa(!verDespensa)}>
                 🧂 Despensa: comprueba que tienes ({despensa.length}) {verDespensa ? '▲' : '▼'}
               </button>
-              {verDespensa && <ul className="lista-compra">{despensa.map(fila)}</ul>}
+              {(verDespensa || repaso) && <ul className="lista-compra">{despensa.map(fila)}</ul>}
             </section>
           )}
           <p className="suave margen-arriba">
