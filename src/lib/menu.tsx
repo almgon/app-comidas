@@ -214,9 +214,18 @@ export function useComensales() {
 const aEntrada = (e: any): EntradaPlan => ({
   id: e.id, fecha: e.fecha, momento: e.momento, orden: Number(e.orden ?? 0), recipe_id: e.recipe_id, raciones: Number(e.raciones), origen: e.origen,
   freezer_item_id: e.freezer_item_id, fijado: e.fijado, nota: e.nota, extras: Array.isArray(e.extras) ? e.extras : [],
+  cocinar_extra: Number(e.cocinar_extra ?? 0), extra_congelado: !!e.extra_congelado,
 })
-const aArticulo = (a: any): ArticuloCompra => ({ ...a, cantidad: num(a.cantidad) })
+const aArticulo = (a: any): ArticuloCompra => ({ ...a, cantidad: num(a.cantidad), tengo: !!a.tengo })
+/** Cambios de la lista hechos sin conexión (marcas y «lo tengo»), por id de artículo */
 const PENDIENTES = 'comidas-compra-pendiente'
+/** Artículos añadidos o quitados a mano sin conexión */
+const COLA = 'comidas-compra-cola'
+type Operacion = { tipo: 'anadir'; tmp: string; list_id: string; texto: string } | { tipo: 'borrar'; id: string }
+const esTemporal = (id: string) => id.startsWith('tmp-')
+/** ¿Ha fallado por falta de conexión (y no porque la base de datos lo rechace)? */
+const sinRed = (err: any) => !navigator.onLine || /fetch|network|load failed|timeout/i.test(String(err?.message ?? err))
+const migracion010 = (msg: string) => /cocinar_extra|extra_congelado|origen_check|tengo|papel/i.test(msg)
 
 export function useSemana(lunes: string) {
   const { hogar, sesion } = useDatos()
@@ -293,13 +302,27 @@ export function useSemana(lunes: string) {
     }
   }, [planId, listaId, recargar])
 
-  // Marcados hechos sin conexión: se envían al volver
+  // Cambios hechos sin conexión: se envían al volver (primero lo añadido y quitado, luego las marcas)
   useEffect(() => {
     const enviar = async () => {
-      const pend = leer<Record<string, { comprado: boolean; comprado_por: string | null; comprado_en: string | null }>>(PENDIENTES) ?? {}
-      const ids = Object.keys(pend)
-      if (!ids.length) return
-      for (const id of ids) {
+      const cola = leer<Operacion[]>(COLA) ?? []
+      const pend = leer<Record<string, Record<string, unknown>>>(PENDIENTES) ?? {}
+      if (!cola.length && !Object.keys(pend).length) return
+      const quedan: Operacion[] = []
+      for (const op of cola) {
+        if (op.tipo === 'anadir') {
+          const marca = pend[op.tmp]
+          const r = await supabase.from('shopping_items').insert({ list_id: op.list_id, texto: op.texto, categoria: 'Otros', manual: true, ...(marca ?? {}) })
+          if (r.error) quedan.push(op)
+          else delete pend[op.tmp]
+        } else {
+          const r = await supabase.from('shopping_items').delete().eq('id', op.id)
+          if (r.error) quedan.push(op)
+        }
+      }
+      localStorage.setItem(COLA, JSON.stringify(quedan))
+      for (const id of Object.keys(pend)) {
+        if (esTemporal(id)) continue
         const r = await supabase.from('shopping_items').update(pend[id]).eq('id', id)
         if (!r.error) delete pend[id]
       }
@@ -316,6 +339,7 @@ export function useSemana(lunes: string) {
     (e: EntradaPlan) => ({
       plan_id: planId, fecha: e.fecha, momento: e.momento, orden: e.orden ?? 0, recipe_id: e.recipe_id, raciones: e.raciones, origen: e.origen,
       freezer_item_id: e.origen === 'congelador' ? e.freezer_item_id : null, fijado: e.fijado, nota: e.nota, extras: e.extras ?? [],
+      cocinar_extra: e.cocinar_extra ?? 0, extra_congelado: !!e.extra_congelado,
     }),
     [planId],
   )
@@ -339,6 +363,7 @@ export function useSemana(lunes: string) {
         if (entradas.length) {
           const r = await supabase.from('plan_entries').upsert(entradas.map(fila), { onConflict: 'plan_id,fecha,momento,orden' })
           if (r.error && /orden|no unique|ON CONFLICT/i.test(r.error.message)) throw new Error('Falta ejecutar la migración 008 en Supabase (varias recetas por comida). Mira la guía.')
+          if (r.error && migracion010(r.error.message)) throw new Error('Falta ejecutar la migración 010 en Supabase (sobras y cocinar de más para congelar). Mira la guía.')
           if (r.error && /extras|momento_check|schema cache/i.test(r.error.message)) throw new Error('Falta ejecutar la migración 007 en Supabase (desayunos en el menú). Mira la guía.')
           chk(r)
         }
@@ -388,76 +413,149 @@ export function useSemana(lunes: string) {
   )
 
   // ---------- Lista de la compra ----------
+  const asegurarLista = useCallback(async (): Promise<ListaCompra> => {
+    if (estado.lista) return estado.lista
+    chk(await supabase.from('shopping_lists').upsert({ plan_id: planId }, { onConflict: 'plan_id', ignoreDuplicates: true }))
+    return chk(await supabase.from('shopping_lists').select('*').eq('plan_id', planId!).single()) as any
+  }, [planId, estado.lista])
+
+  /**
+   * Crea o recalcula la lista. Los artículos que ya estaban se actualizan en su sitio (conservan su id, lo marcado
+   * y «lo tengo», también si el otro está comprando a la vez); solo se crean los nuevos y se quitan los que sobran.
+   */
   const generarLista = useCallback(
     async (necesidades: Necesidad[]) => {
       if (!planId) return
-      let lista = estado.lista
-      if (!lista) {
-        chk(await supabase.from('shopping_lists').upsert({ plan_id: planId }, { onConflict: 'plan_id', ignoreDuplicates: true }))
-        lista = chk(await supabase.from('shopping_lists').select('*').eq('plan_id', planId).single()) as any
-      }
-      const lid = lista!.id
+      const lid = (await asegurarLista()).id
       const previos = (chk(await supabase.from('shopping_items').select('*').eq('list_id', lid)) as any[]).map(aArticulo)
-      const marcados = new Map(previos.filter((a) => !a.manual && a.comprado).map((a) => [claveArticulo(a), a]))
-      chk(await supabase.from('shopping_items').delete().eq('list_id', lid).eq('manual', false))
-      if (necesidades.length)
-        chk(
-          await supabase.from('shopping_items').insert(
-            necesidades.map((n) => {
-              const m = marcados.get(n.clave)
-              return {
-                list_id: lid, ingredient_id: n.ingredient_id, texto: n.texto, categoria: n.categoria, cantidad: n.cantidad, unidad: n.unidad,
-                detalle: n.detalle, origen: n.origen, es_despensa: n.es_despensa, manual: false,
-                comprado: !!m, comprado_por: m?.comprado_por ?? null, comprado_en: m?.comprado_en ?? null,
-              }
-            }),
-          ),
-        )
+      const porClave = new Map<string, ArticuloCompra>()
+      const duplicados: string[] = []
+      for (const a of previos.filter((x) => !x.manual)) {
+        const k = claveArticulo(a)
+        if (porClave.has(k)) duplicados.push(a.id)
+        else porClave.set(k, a)
+      }
+      const campos = (n: Necesidad) => ({
+        list_id: lid, ingredient_id: n.ingredient_id, texto: n.texto, categoria: n.categoria, cantidad: n.cantidad, unidad: n.unidad,
+        detalle: n.detalle, origen: n.origen, es_despensa: n.es_despensa, manual: false,
+      })
+      const actualizar: Record<string, unknown>[] = []
+      const crear: Record<string, unknown>[] = []
+      const usados = new Set<string>()
+      for (const n of necesidades) {
+        const a = porClave.get(n.clave)
+        if (!a) {
+          crear.push(campos(n))
+          continue
+        }
+        usados.add(a.id)
+        const cambia = a.texto !== n.texto || a.cantidad !== n.cantidad || a.unidad !== n.unidad || a.detalle !== n.detalle || a.origen !== n.origen || a.categoria !== n.categoria || a.es_despensa !== n.es_despensa
+        if (cambia) actualizar.push({ id: a.id, ...campos(n), comprado: a.comprado, comprado_por: a.comprado_por, comprado_en: a.comprado_en })
+      }
+      const sobran = [...previos.filter((a) => !a.manual && !usados.has(a.id)).map((a) => a.id), ...duplicados.filter((id) => !usados.has(id))]
+      if (actualizar.length) chk(await supabase.from('shopping_items').upsert(actualizar, { onConflict: 'id' }))
+      if (crear.length) chk(await supabase.from('shopping_items').insert(crear))
+      if (sobran.length) chk(await supabase.from('shopping_items').delete().in('id', [...new Set(sobran)]))
       chk(await supabase.from('shopping_lists').update({ generada_en: new Date().toISOString() }).eq('id', lid))
       await recargar()
     },
-    [planId, estado.lista, recargar],
+    [planId, asegurarLista, recargar],
   )
+
+  /** Guarda en local un cambio de un artículo (para verlo al instante y no perderlo sin conexión) */
+  const cambiarLocal = useCallback(
+    (f: (xs: ArticuloCompra[]) => ArticuloCompra[]) =>
+      setEstado((s) => {
+        const n = { ...s, articulos: f(s.articulos) }
+        localStorage.setItem(clave, JSON.stringify(n))
+        return n
+      }),
+    [clave],
+  )
+  const encolarCambio = (id: string, cambios: Record<string, unknown>) => {
+    const pend = leer<Record<string, Record<string, unknown>>>(PENDIENTES) ?? {}
+    pend[id] = { ...(pend[id] ?? {}), ...cambios }
+    localStorage.setItem(PENDIENTES, JSON.stringify(pend))
+  }
 
   const marcar = useCallback(
     async (a: ArticuloCompra, comprado: boolean) => {
       const cambios = { comprado, comprado_por: comprado ? sesion?.user.id ?? null : null, comprado_en: comprado ? new Date().toISOString() : null }
-      setEstado((s) => {
-        const n = { ...s, articulos: s.articulos.map((x) => (x.id === a.id ? { ...x, ...cambios } : x)) }
-        localStorage.setItem(clave, JSON.stringify(n))
-        return n
-      })
+      cambiarLocal((xs) => xs.map((x) => (x.id === a.id ? { ...x, ...cambios } : x)))
+      if (esTemporal(a.id)) return encolarCambio(a.id, cambios)
       const r = await supabase.from('shopping_items').update(cambios).eq('id', a.id)
-      if (r.error) {
-        const pend = leer<Record<string, typeof cambios>>(PENDIENTES) ?? {}
-        pend[a.id] = cambios
-        localStorage.setItem(PENDIENTES, JSON.stringify(pend))
-      }
+      if (r.error) encolarCambio(a.id, cambios)
     },
-    [sesion, clave],
+    [sesion, cambiarLocal],
+  )
+
+  /** «Esto ya lo tengo»: sale de lo que hay que comprar (y se mantiene al recalcular la lista) */
+  const marcarTengo = useCallback(
+    async (a: ArticuloCompra, tengo: boolean) => {
+      cambiarLocal((xs) => xs.map((x) => (x.id === a.id ? { ...x, tengo } : x)))
+      if (esTemporal(a.id)) return encolarCambio(a.id, { tengo })
+      const r = await supabase.from('shopping_items').update({ tengo }).eq('id', a.id)
+      if (r.error && migracion010(r.error.message)) {
+        cambiarLocal((xs) => xs.map((x) => (x.id === a.id ? { ...x, tengo: !tengo } : x)))
+        throw new Error('Falta ejecutar la migración 010 en Supabase para usar «Ya lo tengo». Mira la guía.')
+      }
+      if (r.error) encolarCambio(a.id, { tengo })
+    },
+    [cambiarLocal],
   )
 
   const anadirArticulo = useCallback(
     async (texto: string) => {
       if (!planId || !texto.trim()) return
-      let lista = estado.lista
-      if (!lista) {
-        chk(await supabase.from('shopping_lists').upsert({ plan_id: planId }, { onConflict: 'plan_id', ignoreDuplicates: true }))
-        lista = chk(await supabase.from('shopping_lists').select('*').eq('plan_id', planId).single()) as any
+      const t = texto.trim()
+      try {
+        const lista = await asegurarLista()
+        try {
+          chk(await supabase.from('shopping_items').insert({ list_id: lista.id, texto: t, categoria: 'Otros', manual: true }))
+          await recargar()
+        } catch (err) {
+          if (!sinRed(err)) throw err
+          // Sin cobertura: se ve ya y se guarda al volver la conexión
+          const tmp = `tmp-${crypto.randomUUID()}`
+          const cola = leer<Operacion[]>(COLA) ?? []
+          localStorage.setItem(COLA, JSON.stringify([...cola, { tipo: 'anadir', tmp, list_id: lista.id, texto: t }]))
+          cambiarLocal((xs) => [
+            ...xs,
+            { id: tmp, list_id: lista.id, ingredient_id: null, texto: t, categoria: 'Otros', cantidad: null, unidad: null, detalle: null, origen: null, es_despensa: false, manual: true, comprado: false, tengo: false, comprado_por: null, comprado_en: null },
+          ])
+        }
+      } catch (err) {
+        if (sinRed(err)) throw new Error('Sin conexión y la lista aún no existe: créala cuando vuelvas a tener cobertura.')
+        throw err
       }
-      chk(await supabase.from('shopping_items').insert({ list_id: lista!.id, texto: texto.trim(), categoria: 'Otros', manual: true }))
-      await recargar()
     },
-    [planId, estado.lista, recargar],
+    [planId, asegurarLista, recargar, cambiarLocal],
   )
 
   const borrarArticulo = useCallback(
     async (id: string) => {
-      setEstado((s) => ({ ...s, articulos: s.articulos.filter((a) => a.id !== id) }))
-      chk(await supabase.from('shopping_items').delete().eq('id', id))
+      cambiarLocal((xs) => xs.filter((a) => a.id !== id))
+      const cola = leer<Operacion[]>(COLA) ?? []
+      if (esTemporal(id)) {
+        // aún no se había guardado: basta con quitarlo de la cola
+        localStorage.setItem(COLA, JSON.stringify(cola.filter((o) => !(o.tipo === 'anadir' && o.tmp === id))))
+        return
+      }
+      const r = await supabase.from('shopping_items').delete().eq('id', id).then((x) => x, (err) => ({ error: err }))
+      if (r.error) localStorage.setItem(COLA, JSON.stringify([...cola, { tipo: 'borrar', id }]))
     },
-    [],
+    [cambiarLocal],
   )
 
-  return { ...estado, cargando, error, recargar, guardarEntradas, borrarEntrada, guardarBatch, cerrarBatch, generarLista, marcar, anadirArticulo, borrarArticulo }
+  /** Las raciones de más de un plato ya están en el congelador */
+  const congelarExtra = useCallback(
+    async (e: EntradaPlan, nombre: string) => {
+      if (!e.cocinar_extra || e.extra_congelado) return
+      chk(await supabase.from('freezer_items').insert({ recipe_id: e.recipe_id, nombre, raciones: e.cocinar_extra, congelado_en: e.fecha, nota: 'Cocinado de más' }))
+      await guardarEntradas([{ ...e, extra_congelado: true }])
+    },
+    [guardarEntradas],
+  )
+
+  return { ...estado, cargando, error, recargar, guardarEntradas, borrarEntrada, guardarBatch, cerrarBatch, generarLista, marcar, marcarTengo, anadirArticulo, borrarArticulo, congelarExtra }
 }

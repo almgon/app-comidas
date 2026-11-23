@@ -19,7 +19,7 @@ interface Datos {
   recargar: () => Promise<void>
   guardarReceta: (r: RecetaBorrador) => Promise<string>
   borrarReceta: (id: string) => Promise<void>
-  actualizarReceta: (id: string, cambios: Partial<Pick<Receta, 'favorita' | 'valoracion'>>) => Promise<void>
+  actualizarReceta: (id: string, cambios: Partial<Pick<Receta, 'favorita' | 'valoracion' | 'papel'>>) => Promise<void>
   guardarIngrediente: (i: Partial<Ingrediente> & { nombre: string }) => Promise<Ingrediente>
   borrarIngrediente: (id: string) => Promise<void>
   /** grupo del método del plato elegido a mano (null = el que deduce la app) */
@@ -203,8 +203,11 @@ export function DatosProvider({ children }: { children: ReactNode }) {
       const fila: Record<string, unknown> = { ...campos, titulo: campos.titulo.trim() || 'Receta sin título' }
       // peso_total_g llega con la migración 008: si no se usa, no se manda (así se puede guardar aunque falte la migración)
       if (fila.peso_total_g == null && !(id && recetasRef.current.find((r) => r.id === id)?.peso_total_g != null)) delete fila.peso_total_g
+      // papel llega con la migración 010: un plato completo no hace falta mandarlo si la receta aún no lo tiene
+      if ((fila.papel ?? 'completo') === 'completo' && !(id && recetasRef.current.find((r) => r.id === id)?.papel)) delete fila.papel
       const resp = id ? await supabase.from('recipes').update(fila).eq('id', id).select('id').single() : await supabase.from('recipes').insert(fila).select('id').single()
       if (resp.error && /peso_total_g/.test(resp.error.message)) throw new Error('Falta ejecutar la migración 008 en Supabase para guardar el peso de la receta terminada (mira la guía).')
+      if (resp.error && /papel/.test(resp.error.message)) throw new Error('Falta ejecutar la migración 010 en Supabase para guardar si es plato completo, principal o guarnición (mira la guía).')
       const guardada = chk(resp)
       const rid = (guardada as any).id as string
 
@@ -250,9 +253,14 @@ export function DatosProvider({ children }: { children: ReactNode }) {
     [recargar],
   )
 
-  const actualizarReceta = useCallback(async (id: string, cambios: Partial<Pick<Receta, 'favorita' | 'valoracion'>>) => {
+  const actualizarReceta = useCallback(async (id: string, cambios: Partial<Pick<Receta, 'favorita' | 'valoracion' | 'papel'>>) => {
+    const antes = recetasRef.current.find((r) => r.id === id)
     setRecetas((rs) => rs.map((r) => (r.id === id ? { ...r, ...cambios } : r)))
-    chk(await supabase.from('recipes').update(cambios).eq('id', id))
+    const r = await supabase.from('recipes').update(cambios).eq('id', id)
+    if (r.error) {
+      if (antes) setRecetas((rs) => rs.map((x) => (x.id === id ? antes : x)))
+      throw new Error(/papel/.test(r.error.message) ? 'Falta ejecutar la migración 010 en Supabase (plato completo, principal o guarnición). Mira la guía.' : r.error.message)
+    }
   }, [])
 
   const guardarIngrediente = useCallback(

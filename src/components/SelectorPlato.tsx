@@ -1,11 +1,10 @@
 import { useMemo, useState } from 'react'
 import { normalizar } from '../../shared/parser.js'
-import { esComidaDeBatch, opcionesHueco, ordenDe, problemasEntrada, type ContextoMenu, type Hueco, type Opcion } from '../lib/generador'
+import { admiteSobras, cenaAnterior, esComidaDeBatch, opcionesHueco, ordenDe, problemasEntrada, type ContextoMenu, type Hueco, type Opcion } from '../lib/generador'
 import { useDatos } from '../lib/datos'
 import { DIAS, fechasSemana, fechaCorta } from '../lib/semana'
 import { fmt } from '../lib/nutricion'
-import { ChipPlato } from './TartaPlato'
-import { repartoHueco, tipoRangos } from '../lib/plato'
+import { ChipsRaciones } from './Raciones'
 import { ORIGENES, etiquetaGrupo, tiempoTotal, type EntradaPlan, type Extra, type Momento, type Origen } from '../lib/tipos'
 
 interface Props {
@@ -44,13 +43,19 @@ export default function SelectorPlato({ hueco, ctx, actual, delDia, entradas, on
   const validas = useMemo(() => {
     const disp = new Map(ctx.congelados.map((c) => [c.id, c.raciones + (actual?.freezer_item_id === c.id ? actual.raciones : 0)]))
     const usadas = new Set(otras_del_dia.map((e) => e.recipe_id))
-    return opcionesHueco(h, ctx, disp).filter((o) => !usadas.has(o.recipe_id))
-  }, [h, ctx, actual, otras_del_dia])
+    const ops = opcionesHueco(h, ctx, disp, anadida ? 'guarnicion' : 'plato').filter((o) => !usadas.has(o.recipe_id))
+    // Sobras de la cena de ayer
+    const cena = !anadida && admiteSobras(h) ? cenaAnterior(entradas, hueco.fecha, ctx.lunes) : undefined
+    if (cena?.recipe_id && (cena.origen === 'fresco' || cena.origen === 'batch') && !usadas.has(cena.recipe_id) && recetas.has(cena.recipe_id))
+      ops.unshift({ recipe_id: cena.recipe_id, origen: 'sobras', freezer_item_id: null })
+    return ops
+  }, [h, ctx, actual, otras_del_dia, anadida, entradas, hueco.fecha, recetas])
 
   const nq = normalizar(q)
   const coincide = (id: string) => !nq || normalizar(recetas.get(id)?.titulo ?? '').includes(nq)
   const congelador = validas.filter((o) => o.origen === 'congelador' && coincide(o.recipe_id))
-  const resto = validas.filter((o) => o.origen !== 'congelador' && coincide(o.recipe_id))
+  const sobras = validas.filter((o) => o.origen === 'sobras' && coincide(o.recipe_id))
+  const resto = validas.filter((o) => o.origen !== 'congelador' && o.origen !== 'sobras' && coincide(o.recipe_id))
   const idsValidos = new Set(resto.map((o) => o.recipe_id))
   const otras = todas
     ? ctx.recetas
@@ -61,14 +66,8 @@ export default function SelectorPlato({ hueco, ctx, actual, delDia, entradas, on
   const entrada = (o: Opcion): EntradaPlan => ({
     id: actual?.id, fecha: hueco.fecha, momento: hueco.momento, orden: hueco.orden, recipe_id: o.recipe_id, raciones: actual?.raciones ?? ctx.raciones,
     origen: o.origen, freezer_item_id: o.freezer_item_id, fijado: true, nota: null, extras: actual?.extras ?? [],
+    cocinar_extra: o.origen === 'fresco' || o.origen === 'batch' ? (actual?.recipe_id === o.recipe_id ? actual?.cocinar_extra ?? 0 : 0) : 0, extra_congelado: false,
   })
-
-  // Método del plato: cómo queda el hueco entero con cada receta
-  const { mapaIngredientes } = useDatos()
-  const factorHogar = ctx.comensales.reduce((t, c) => t + c.factor, 0) || 1
-  const restoHueco = delDia.filter((e) => e.momento === hueco.momento && ordenDe(e) !== hueco.orden)
-  const platoCon = (id: string) =>
-    ctx.platos ? repartoHueco([...restoHueco, { recipe_id: id, origen: 'fresco', extras: anadida ? [] : actual?.extras ?? [] }], ctx.platos, mapaIngredientes, factorHogar) : null
 
   const fila = (o: Opcion, conProblemas = false) => {
     const r = recetas.get(o.recipe_id)!
@@ -77,7 +76,7 @@ export default function SelectorPlato({ hueco, ctx, actual, delDia, entradas, on
     const p = ctx.proteina.get(r.id)
     const m = ctx.macros?.get(r.id)
     const c = o.freezer_item_id ? ctx.congelados.find((x) => x.id === o.freezer_item_id) : undefined
-    const problemas = conProblemas ? problemasEntrada(entrada(o), delDia, r, dia) : []
+    const problemas = conProblemas ? problemasEntrada(entrada(o), delDia, r, dia, entradas, ctx.lunes) : []
     const n = usosSemana.get(r.id) ?? 0
     return (
       <li key={`${o.recipe_id}-${o.origen}-${o.freezer_item_id ?? ''}`}>
@@ -88,7 +87,7 @@ export default function SelectorPlato({ hueco, ctx, actual, delDia, entradas, on
             {t != null && <span className="chip">⏱ {t} min</span>}
             {m && <span className="chip">🔥 {fmt(m.kcal)} kcal</span>}
             {p != null && <span className="chip">💪 {fmt(p)} g</span>}
-            <ChipPlato reparto={platoCon(r.id)} tipo={tipoRangos(hueco.momento)} texto={false} />
+            <ChipsRaciones p={ctx.porciones?.get(r.id)} />
             <span className="chip">{ORIGENES[o.origen].emoji} {o.origen === 'congelador' && c ? `${fmt(c.raciones, 1)} rac. · ${fechaCorta(c.congelado_en)}` : ORIGENES[o.origen].etiqueta}</span>
             {n > 0 && <span className="chip">ya {n}× esta semana</span>}
             {problemas.map((x) => (
@@ -100,7 +99,11 @@ export default function SelectorPlato({ hueco, ctx, actual, delDia, entradas, on
     )
   }
 
-  const cambiarOrigen = (origen: Origen) => actual?.recipe_id && onElegir({ ...actual, origen, freezer_item_id: null })
+  const cambiarOrigen = (origen: Origen) => actual?.recipe_id && onElegir({ ...actual, origen, freezer_item_id: null, cocinar_extra: origen === 'sobras' ? 0 : actual.cocinar_extra })
+  const cenaAyer = admiteSobras(h) ? cenaAnterior(entradas, hueco.fecha, ctx.lunes) : undefined
+  const origenes: Origen[] = ['fresco', 'batch', ...(cenaAyer?.recipe_id && cenaAyer.recipe_id === actual?.recipe_id ? (['sobras'] as Origen[]) : [])]
+  const rActual = actual?.recipe_id ? recetas.get(actual.recipe_id) : undefined
+  const puedeCongelar = !anadida && hueco.momento !== 'desayuno' && actual?.recipe_id && (actual.origen === 'fresco' || actual.origen === 'batch')
 
   return (
     <div className="hoja-fondo" onClick={onCerrar}>
@@ -113,23 +116,40 @@ export default function SelectorPlato({ hueco, ctx, actual, delDia, entradas, on
         </div>
         {actual?.recipe_id && actual.origen !== 'congelador' && actual.origen !== 'libre' && hueco.momento !== 'desayuno' && (
           <div className="segmentado ancho">
-            {(['fresco', 'batch'] as Origen[]).map((o) => (
+            {origenes.map((o) => (
               <button key={o} className={actual.origen === o ? 'on' : ''} onClick={() => cambiarOrigen(o)}>
                 {ORIGENES[o].emoji} {ORIGENES[o].etiqueta}
               </button>
             ))}
           </div>
         )}
-        <input type="search" placeholder="Buscar receta…" value={q} onChange={(e) => setQ(e.target.value)} />
-        {ctx.platos && <p className="suave pequeno">🍽️ ✓ cumple · ≈ casi · ✗ no: cómo queda {anadida || restoHueco.length ? 'todo el hueco' : 'el hueco'} con esa receta según el método del plato.</p>}
+        {puedeCongelar && (
+          <div className="congelar-extra">
+            <span>❄️ Cocinar de más para congelar{rActual && !rActual.congelable ? ' (la receta no está marcada como congelable)' : ''}</span>
+            <div className="segmentado ancho">
+              {[0, 1, 2].map((k) => {
+                const v = Math.round(k * ctx.raciones * 100) / 100
+                return (
+                  <button key={k} className={Math.abs((actual!.cocinar_extra ?? 0) - v) < 0.01 ? 'on' : ''} onClick={() => onGuardar({ ...actual!, cocinar_extra: v, extra_congelado: false })}>
+                    {k === 0 ? 'No' : `+${k} comida${k > 1 ? 's' : ''} (${fmt(v, 2)} rac.)`}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        )}
+        <input type="search" placeholder={anadida ? 'Buscar guarnición…' : 'Buscar receta…'} value={q} onChange={(e) => setQ(e.target.value)} />
+        {ctx.porciones && <p className="suave pequeno">🥦 verdura · 🍚 hidratos · 🥛 lácteos: raciones por persona que aporta cada receta.</p>}
         <ul className="opciones-plato">
+          {sobras.length > 0 && <li className="grupo">🥡 Sobras de la cena de ayer</li>}
+          {sobras.map((o) => fila(o))}
           {congelador.length > 0 && <li className="grupo">❄️ En el congelador</li>}
           {congelador.map((o) => fila(o))}
-          {resto.length > 0 && <li className="grupo">{hueco.momento === 'desayuno' ? 'Recetas de desayuno' : 'Cumplen las reglas de este hueco'}</li>}
+          {resto.length > 0 && <li className="grupo">{hueco.momento === 'desayuno' ? 'Recetas de desayuno' : anadida ? 'Guarniciones' : 'Cumplen las reglas de este hueco'}</li>}
           {resto.map((o) => fila(o))}
           {resto.length === 0 && congelador.length === 0 && !todas && (
             <li className="suave">
-              {hueco.momento === 'desayuno' ? 'No hay recetas de tipo «Desayuno»' : 'Ninguna receta cumple las reglas de este hueco'}
+              {hueco.momento === 'desayuno' ? 'No hay recetas de tipo «Desayuno»' : anadida ? 'No hay guarniciones que encajen (marca recetas como «Guarnición»)' : 'Ninguna receta cumple las reglas de este hueco'}
               {q ? ' con esa búsqueda' : ''}. Puedes ver todas o añadir alimentos sueltos abajo.
             </li>
           )}
@@ -139,7 +159,7 @@ export default function SelectorPlato({ hueco, ctx, actual, delDia, entradas, on
         {!todas && (
           <button className="enlace" onClick={() => setTodas(true)}>Ver también las que no cumplen las reglas</button>
         )}
-        {anadida && <p className="suave">Se añade a lo que ya hay en este hueco (por ejemplo, una ensalada o un postre). Cuenta para las kcal del día y para la compra.</p>}
+        {anadida && <p className="suave">Se añade a lo que ya hay en este hueco (arroz, patatas, ensalada, verduras…). Cuenta para las raciones y kcal del día y para la compra.</p>}
         {!anadida && <AlimentosSueltos
           extras={actual?.extras ?? []}
           onCambiar={(extras) =>

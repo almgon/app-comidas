@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { avisosRecetario, desajusteDia, esCenaEntreSemana, generarMenu, indicadores, objetivos, ordenDe, otraAnadida, type ContextoMenu } from './generador'
+import { avisosRecetario, costeDia, esCenaEntreSemana, generarMenu, indicadores, objetivos, ordenDe, otraAnadida, type ContextoMenu } from './generador'
 import { nutricionPorRacion, racionesDeBase, pesoReceta } from './nutricion'
 import { balance, diaPersona } from './objetivos'
 import { sesionDomingo } from './batch'
@@ -223,6 +223,28 @@ describe('batch y compra', () => {
     expect(lista.findIndex((x) => x.categoria === 'Fruta')).toBeLessThan(lista.findIndex((x) => x.categoria === 'Carne'))
   })
 
+  it('las sobras y lo que se cocina de más para congelar cuentan en la compra y en el domingo', () => {
+    // jueves: tortilla de cena (el doble) y viernes a mediodía sus sobras; sábado pollo con 2,25 rac. de más para congelar
+    const ents = [
+      ...entradas.filter((x) => x.fecha !== '2026-11-27'),
+      e('2026-11-27', 'comida', tortilla, 'sobras'),
+      { ...e('2026-11-28', 'comida', polloR, 'fresco'), cocinar_extra: 2.25 },
+    ]
+    const batch = sesionDomingo(LUNES, ents, recetas, {}, [])
+    const lista = calcularCompra({ lunes: LUNES, entradas: ents, recetas, ingredientes, batch, comensales, envases: new Map(), fruta: false })
+    expect(lista.find((x) => x.ingredient_id === 'i-huevo')!.cantidad).toBe(9) // 4 × 4,5/2 = 9
+    // pollo: 600 g del domingo + 300 × 4,5/2 = 675 g del sábado
+    expect(lista.find((x) => x.ingredient_id === 'i-pollo')!.cantidad).toBe(1280) // 1275 redondeado
+    // sobras de una cena del domingo: se cocina el doble el domingo
+    const conBatch = [e('2026-11-24', 'cena', tortilla, 'batch'), e('2026-11-25', 'comida', tortilla, 'sobras')]
+    const items = sesionDomingo(LUNES, conBatch, recetas, {}, [])
+    expect(items.find((i) => i.receta.id === tortilla.id)!.necesarias).toBeCloseTo(4.5)
+    // y lo que el menú pide congelar de un plato del domingo se suma al congelador
+    const extra = sesionDomingo(LUNES, [{ ...e('2026-11-23', 'comida', polloR, 'batch'), cocinar_extra: 4.5 }], recetas, {}, [])
+    expect(extra[0].extra).toBeCloseTo(4.5)
+    expect(extra[0].cocinar).toBeCloseTo(6.75)
+  })
+
   it('suma los alimentos sueltos de cualquier hueco', () => {
     const avena = ing('i-avena', 'Copos de avena', { envase_cantidad: 500, envase_nombre: 'paquete' })
     const des = (fecha: string): EntradaPlan => ({ fecha, momento: 'desayuno', recipe_id: null, raciones: 2.25, origen: 'fresco', freezer_item_id: null, fijado: false, nota: null, extras: [{ ingredient_id: 'i-avena', cantidad: 110 }] })
@@ -303,6 +325,8 @@ describe('kcal y macros', () => {
     const rs = [
       ...variado(),
       receta('Ensalada de garbanzos', 'legumbre', { t_prep_min: 10, t_coccion_min: 0 }),
+      receta('Pan', null, { papel: 'guarnicion', t_prep_min: 0, t_coccion_min: 0 }),
+      receta('Ensalada verde', null, { papel: 'guarnicion', t_prep_min: 5, t_coccion_min: 0 }),
       receta('Yogur con nueces', null, { tipo_comida: 'desayuno' }),
       receta('Tostadas', null, { tipo_comida: 'desayuno' }),
     ]
@@ -322,7 +346,7 @@ describe('kcal y macros', () => {
       expect(new Set(ids).size).toBe(ids.length) // nada se repite en el mismo día
       expect(delDia.filter((e) => ordenDe(e) > 0).length).toBeLessThanOrEqual(2)
       const sin = delDia.filter((e) => ordenDe(e) === 0)
-      if (delDia.length > sin.length) expect(desajusteDia(ctx, delDia)).toBeLessThan(desajusteDia(ctx, sin))
+      if (delDia.length > sin.length) expect(costeDia(ctx, delDia)).toBeLessThan(costeDia(ctx, sin))
     }
     // las fijadas se respetan y las demás se recalculan
     const fija = { ...anadidas[0], fijado: true }

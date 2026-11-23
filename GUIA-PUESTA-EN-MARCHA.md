@@ -97,6 +97,8 @@ Primeros pasos en la app:
 
 ## Método del plato (migración 009)
 
+> Desde la migración 010 el menú ya no obliga a que cada comida cumpla el método del plato: la tarta queda como información y el equilibrio se mira en el día entero (ver abajo).
+
 1. **Supabase → SQL Editor → New query**: pega [`supabase/migrations/009_metodo_plato.sql`](supabase/migrations/009_metodo_plato.sql) y pulsa **Run**. No borra nada. Sin este paso todo funciona igual, pero no se puede cambiar a mano el grupo de un ingrediente.
 2. En el iPhone, cierra la app del todo y vuelve a abrirla (a veces dos veces).
 3. Cada ingrediente cuenta en un grupo: 🥦 verdura y fruta, 🍗 proteína (carne, pescado, huevo, legumbres, yogur, queso), 🍞 hidratos (pan, arroz, pasta, patata, avena) o 🫒 grasa saludable (aceite, frutos secos, aguacate). Especias, caldos, leche, bebidas y salsas no cuentan. La app lo deduce de la sección y del nombre; si alguno no cuadra, cámbialo en **Ajustes → Ingredientes** o en la receta («De dónde sale cada grupo»).
@@ -104,3 +106,15 @@ Primeros pasos en la app:
 5. **Desayuno, más flexible**: verdura y fruta 15-65 % (con una pieza de fruta basta), proteína 10-40 %, hidratos 20-60 %, grasa ≤ 20 %.
 6. Cada receta muestra su tarta y si cumple (✓), casi (≈) o no (✗). En **Recetas → Filtros → Método del plato** se ven las que cumplen.
 7. En el **Menú**, la tarta pequeña de cada desayuno, comida o cena cuenta todas sus recetas y alimentos sueltos juntos; tócala para ver el reparto. «✨ Proponer semana» busca para cada hueco una receta que cumpla sola o la completa con 1 o 2 recetas más (por ejemplo, crema de calabacín + tortilla francesa + pan), sin dejar de ajustar las kcal del día.
+
+## Platos completos, principales y guarniciones · cuándo cocinar (migración 010)
+
+1. **Supabase → SQL Editor → New query**: pega [`supabase/migrations/010_papeles_y_cocina.sql`](supabase/migrations/010_papeles_y_cocina.sql) y pulsa **Run**. No borra nada. **Hace falta** para proponer la semana, cambiar el papel de una receta y usar «Ya lo tengo».
+2. En el iPhone, cierra la app del todo y vuelve a abrirla (a veces dos veces). Ahora se abre en **☀️ Hoy**; el menú de la semana está en **🗓️ Menú**.
+3. **Papel de cada receta** (en la receta o al editarla): 🍲 *plato completo* (lentejas, macarrones con boloñesa), 🍗 *principal* (filete de pollo, merluza a la plancha) o 🥗 *guarnición* (arroz, patatas, quinoa, ensalada, verduras asadas). Todas las recetas que ya tenías quedan como plato completo: cambia las que sean principales o guarniciones. Una guarnición puede ser solo un ingrediente con sus gramos por ración, sin pasos.
+4. **Proponer semana** pone un plato completo solo o un principal con 1-2 guarniciones (mejor una de verdura y otra de hidratos). 🎲 en una guarnición la cambia por otra del mismo tipo.
+5. **Equilibrio por raciones (AESAN)**, por persona y día: verdura ≥3 raciones (150 g), hidratos 3-6 (70 g de arroz o pasta en crudo, 50 g de pan, 200 g de patata), lácteos ≤3. Por semana: legumbre ≥4, pescado 3-4 (1 azul), carne 3-4 (roja ≤2), huevo ≤4, frutos secos ≥3. La fruta va en la lista de la compra (3 piezas al día). Los objetivos están en `src/lib/grupos.ts`.
+6. **Cuándo se cocina** cada plato: 🔥 ese día, 🍲 el domingo, 🥡 sobras de la cena de ayer (de miércoles a domingo a mediodía: la cena se hace el doble) o ❄️ del congelador. Además, la semana propone **2 platos congelables para hacer de más y congelar** para la semana siguiente (se puede cambiar en cada plato: «Cocinar de más para congelar»). Lo del domingo se congela al cerrar la sesión; lo de otros días, con «✓ Hecho: al congelador» en **Hoy**.
+7. **Hoy** enseña hoy y mañana: qué toca, qué cocinar y cuánto, y arriba lo que hay que **sacar del congelador esta noche**.
+8. **Compra**: al recalcular la lista ya no se pierde lo marcado (tampoco si el otro está comprando); sin cobertura se puede añadir y quitar (se guarda al volver la conexión). «🏠 Repasar lo que ya hay en casa» quita de la lista lo que ya tenéis y no vuelve al recalcularla.
+

@@ -1,7 +1,7 @@
 // Sesión de batch cooking del domingo: qué cocinar, cuánto y dónde guardarlo
 import type { Congelado, EntradaPlan, EstadoBatch, Ingrediente, Momento, Receta } from './tipos'
 import { racionesDeBase } from './nutricion'
-import { aguantaNevera, NEVERA_POR_DEFECTO } from './generador'
+import { aguantaNevera, cenaAnterior, NEVERA_POR_DEFECTO } from './generador'
 import { indiceDia } from './semana'
 
 export interface UsoBatch {
@@ -62,11 +62,23 @@ export function sesionDomingo(
     }
   }
 
+  // Raciones de más que el menú pide congelar de cada plato del domingo
+  const extraPedida = new Map<string, number>()
   for (const e of entradas) {
     const r = e.recipe_id ? recetas.get(e.recipe_id) : undefined
     if (!r || e.origen === 'libre' || e.origen === 'congelador') continue
-    if (e.origen === 'batch') anadir(r, { fecha: e.fecha, momento: e.momento, raciones: e.raciones })
-    bases(r, e.raciones, e, new Set())
+    const extra = e.cocinar_extra ?? 0
+    if (e.origen === 'sobras') {
+      // Sobras de una cena del domingo: también se cocinan el domingo
+      const cena = cenaAnterior(entradas, e.fecha, lunes)
+      if (!cena || cena.origen === 'congelador' || cena.origen === 'libre') continue
+      if (cena.origen === 'batch') anadir(r, { fecha: e.fecha, momento: e.momento, raciones: e.raciones })
+    }
+    if (e.origen === 'batch') {
+      anadir(r, { fecha: e.fecha, momento: e.momento, raciones: e.raciones })
+      if (extra > 0) extraPedida.set(r.id, (extraPedida.get(r.id) ?? 0) + extra)
+    }
+    bases(r, e.raciones + extra, e, new Set())
   }
 
   const items: ItemBatch[] = []
@@ -87,7 +99,8 @@ export function sesionDomingo(
     const netas = Math.max(0, necesarias - delCongelador)
     // Si es congelable, se cocina la receta entera (o múltiplos) y lo que sobra va al congelador
     const rendimiento = r.raciones || 1
-    const extraSugerida = r.congelable && netas > 0 ? r2(Math.ceil(netas / rendimiento - 0.05) * rendimiento - netas) : 0
+    const redondeo = r.congelable && netas > 0 ? r2(Math.ceil(netas / rendimiento - 0.05) * rendimiento - netas) : 0
+    const extraSugerida = Math.max(redondeo, r2(extraPedida.get(id) ?? 0))
     const est = estado[id] ?? {}
     const extra = Math.max(0, est.extra ?? (extraSugerida >= 0.5 ? extraSugerida : 0))
     const paraCongelar = Math.min(netas, us.filter((u) => u.destino === 'congelador').reduce((s, u) => s + u.raciones, 0))
