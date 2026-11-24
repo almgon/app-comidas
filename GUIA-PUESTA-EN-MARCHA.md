@@ -105,7 +105,7 @@ Primeros pasos en la app:
 4. Se mide por **peso en el plato ya cocinado** (no por kcal): el arroz, la pasta y las legumbres secas cuentan unas 2,5 veces su peso en crudo. Objetivo: 50 % verdura y fruta, 25 % proteína, 25 % hidratos y poca grasa. Se da por bueno con verdura 40-65 %, proteína 15-35 %, hidratos 15-35 % y grasa ≤ 12 %.
 5. **Desayuno, más flexible**: verdura y fruta 15-65 % (con una pieza de fruta basta), proteína 10-40 %, hidratos 20-60 %, grasa ≤ 20 %.
 6. Cada receta muestra su tarta y si cumple (✓), casi (≈) o no (✗). En **Recetas → Filtros → Método del plato** se ven las que cumplen.
-7. En el **Menú**, la tarta pequeña de cada desayuno, comida o cena cuenta todas sus recetas y alimentos sueltos juntos; tócala para ver el reparto. «✨ Proponer semana» busca para cada hueco una receta que cumpla sola o la completa con 1 o 2 recetas más (por ejemplo, crema de calabacín + tortilla francesa + pan), sin dejar de ajustar las kcal del día.
+7. En el **Menú**, la tarta pequeña de cada desayuno, comida o cena cuenta todas sus recetas y alimentos sueltos juntos; tócala para ver el reparto. «✨ Proponer semana» busca para cada hueco una receta que cumpla sola o la completa con 1 o 2 recetas más (por ejemplo, crema de calabacín + tortilla francesa + pan).
 
 ## Platos completos, principales y guarniciones · cuándo cocinar (migración 010)
 
@@ -118,3 +118,14 @@ Primeros pasos en la app:
 7. **Hoy** enseña hoy y mañana: qué toca, qué cocinar y cuánto, y arriba lo que hay que **sacar del congelador esta noche**.
 8. **Compra**: al recalcular la lista ya no se pierde lo marcado (tampoco si el otro está comprando); sin cobertura se puede añadir y quitar (se guarda al volver la conexión). «🏠 Repasar lo que ya hay en casa» quita de la lista lo que ya tenéis y no vuelve al recalcularla.
 
+
+## Borrar semana, vaciar la compra, sin reglas de tiempo ni kcal, pesos aproximados
+
+No hace falta SQL: basta con cerrar la app del todo en el iPhone y volver a abrirla (a veces dos veces).
+
+1. **Menú → 🗑 Borrar la semana**: borra todos los platos de esa semana (también los fijados 📌). La lista de la compra no se toca.
+2. **Compra → 🔄 Actualizar con el menú**: recalcula la lista con el menú de la semana y conserva lo marcado y lo añadido a mano. **🗑 Vaciar lista** la borra entera; después se puede volver a crear desde el menú.
+3. **Sin reglas de tiempo**: las cenas de lunes a viernes ya no tienen que ser de ≤ 30 min. Sigue la regla de que lunes y martes a mediodía se come lo cocinado el domingo.
+4. **Sin objetivos de kcal**: el menú ya no ajusta ni avisa por kcal, hidratos o grasa. Se equilibra por raciones (verdura, hidratos, lácteos) y frecuencias AESAN. Las kcal de cada receta se siguen viendo como información.
+5. **Pesos aproximados**: la verdura y la fruta que no tienen peso por unidad usan el de una pieza mediana («2 patatas» = 400 g, «1 brócoli» = 400 g; la lista está en `src/lib/pesos.ts`). En Ingredientes se ven con «≈». Si pones el peso a mano en el ingrediente, manda el tuyo.
+6. **Proteína sin peso**: la carne, el pescado, el tofu… sin gramos en la receta («pechuga de pollo», «4 filetes de merluza») cuentan **150 g por ración** para la compra, la nutrición y las raciones. Si pones los gramos, se usan los tuyos.

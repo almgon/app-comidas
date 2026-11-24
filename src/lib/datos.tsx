@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { pesoPiezaAprox } from './pesos'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from './supabase'
 import type { GrupoPlato, Hogar, Ingrediente, Perfil, Receta, RecetaBorrador } from './tipos'
@@ -24,7 +25,7 @@ interface Datos {
   borrarIngrediente: (id: string) => Promise<void>
   /** grupo del método del plato elegido a mano (null = el que deduce la app) */
   guardarGrupoPlato: (ingredientId: string, grupo: GrupoPlato | null) => Promise<void>
-  guardarPerfil: (cambios: Partial<Pick<Perfil, 'nombre' | 'peso_kg' | 'factor_racion' | 'kcal_objetivo'>>) => Promise<void>
+  guardarPerfil: (cambios: Partial<Pick<Perfil, 'nombre' | 'peso_kg' | 'factor_racion'>>) => Promise<void>
   renombrarHogar: (nombre: string) => Promise<void>
 }
 
@@ -57,9 +58,13 @@ function aReceta(row: any): Receta {
 
 const num = (v: any) => (v == null ? null : Number(v))
 function aIngrediente(i: any): Ingrediente {
+  const peso = num(i.peso_unidad_g)
+  const aprox = peso == null ? pesoPiezaAprox(i.nombre, i.categoria) : null
   return {
     ...i,
-    peso_unidad_g: num(i.peso_unidad_g),
+    // verdura y fruta sin peso por unidad: el de una pieza mediana
+    peso_unidad_g: peso ?? aprox,
+    peso_unidad_aprox: aprox != null,
     kcal_100: num(i.kcal_100),
     proteina_100: num(i.proteina_100),
     hidratos_100: num(i.hidratos_100),
@@ -266,7 +271,7 @@ export function DatosProvider({ children }: { children: ReactNode }) {
   const guardarIngrediente = useCallback(
     async (i: Partial<Ingrediente> & { nombre: string }) => {
       // el grupo del plato se guarda aparte (guardarGrupoPlato)
-      const { id, grupo_plato: _g, ...campos } = i
+      const { id, grupo_plato: _g, peso_unidad_aprox: _a, ...campos } = i
       const fila = { ...campos, household_id: hogarId }
       const resp = id
         ? await supabase.from('ingredients').update(fila).eq('id', id).select('*').single()
@@ -304,10 +309,9 @@ export function DatosProvider({ children }: { children: ReactNode }) {
   )
 
   const guardarPerfil = useCallback(
-    async (cambios: Partial<Pick<Perfil, 'nombre' | 'peso_kg' | 'factor_racion' | 'kcal_objetivo'>>) => {
+    async (cambios: Partial<Pick<Perfil, 'nombre' | 'peso_kg' | 'factor_racion'>>) => {
       if (!uid) return
       const r = await supabase.from('profiles').update(cambios).eq('id', uid)
-      if (r.error && /kcal_objetivo/.test(r.error.message)) throw new Error('Falta ejecutar la migración 008 en Supabase para guardar el objetivo de kcal (mira la guía).')
       chk(r)
       await recargar()
     },

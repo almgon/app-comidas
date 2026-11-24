@@ -1,4 +1,5 @@
 import type { Ingrediente, LineaIngrediente, Receta } from './tipos'
+import { PROTEINA_POR_RACION_G, esProteinaPlato } from './pesos'
 
 // Gramos aproximados de una unidad de medida casera
 const GRAMOS_POR_UNIDAD: Record<string, number> = {
@@ -8,7 +9,23 @@ const GRAMOS_POR_UNIDAD: Record<string, number> = {
   oz: 28.35, lb: 453.6,
 }
 
-export function gramosDe(linea: Pick<LineaIngrediente, 'cantidad' | 'unidad'>, ing: Ingrediente): number | null {
+const PESO_REAL = new Set(['g', 'kg', 'ml', 'l', 'dl', 'cl', 'oz', 'lb'])
+
+/**
+ * Proteína (carne, pescado, tofu…) sin peso en la receta («pechuga de pollo», «4 filetes de merluza»):
+ * se suponen 150 g por ración. null si la línea sí da el peso (o el ingrediente tiene peso por unidad) o no es proteína.
+ */
+export function proteinaSupuesta(linea: Pick<LineaIngrediente, 'cantidad' | 'unidad'>, ing: Ingrediente, raciones: number): number | null {
+  if (!esProteinaPlato(ing)) return null
+  const u = (linea.unidad ?? '').trim().toLowerCase()
+  if (linea.cantidad != null && (PESO_REAL.has(u) || ing.peso_unidad_g)) return null
+  return PROTEINA_POR_RACION_G * (raciones || 1)
+}
+
+/** Gramos de una línea. Con las raciones de la receta, a la proteína sin peso se le suponen 150 g por ración. */
+export function gramosDe(linea: Pick<LineaIngrediente, 'cantidad' | 'unidad'>, ing: Ingrediente, raciones?: number): number | null {
+  const sup = raciones == null ? null : proteinaSupuesta(linea, ing, raciones)
+  if (sup != null) return sup
   if (linea.cantidad == null) return null
   const u = linea.unidad ?? 'ud'
   if (u in GRAMOS_POR_UNIDAD) return linea.cantidad * GRAMOS_POR_UNIDAD[u]
@@ -45,7 +62,7 @@ export function pesoReceta(r: Receta, ingredientes: Map<string, Ingrediente>, re
       continue
     }
     const ing = l.ingredient_id ? ingredientes.get(l.ingredient_id) : undefined
-    const x = ing ? gramosDe(l, ing) : null
+    const x = ing ? gramosDe(l, ing, r.raciones) : null
     if (x != null) g += x
   }
   return g > 0 ? g : null
@@ -147,7 +164,7 @@ export function nutricionPorRacion(
       sinContar.push(l.texto_original)
       continue
     }
-    const g = gramosDe(l, ing)
+    const g = gramosDe(l, ing, receta.raciones)
     if (g == null) {
       // "sal al gusto": sin cantidad y sin aporte relevante no se avisa
       if ((ing.proteina_100 ?? 0) > 1 || (ing.kcal_100 ?? 0) > 100) sinContar.push(l.texto_original)

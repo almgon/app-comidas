@@ -150,7 +150,7 @@ export function platoPorRacion(
       res.sinContar.push(l.texto_original)
       continue
     }
-    const g = gramosDe(l, ing)
+    const g = gramosDe(l, ing, r)
     const grupo = grupoPlato(ing)
     if (g == null) {
       if (grupo !== 'otro' && grupo !== 'grasa') res.sinContar.push(l.texto_original)

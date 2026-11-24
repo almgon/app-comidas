@@ -142,7 +142,7 @@ export default function Recetas() {
             <select value={maxMin} onChange={(e) => setMaxMin(e.target.value ? Number(e.target.value) : '')}>
               <option value="">Sin límite</option>
               <option value="15">15 min</option>
-              <option value="30">30 min (cena rápida)</option>
+              <option value="30">30 min</option>
               <option value="45">45 min</option>
               <option value="60">1 hora</option>
             </select>

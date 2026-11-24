@@ -32,7 +32,7 @@ export default function NuevoIngrediente({
   const [nombre, setNombre] = useState(inicial?.nombre ?? nombreInicial ?? '')
   const [categoria, setCategoria] = useState(inicial?.categoria ?? 'Otros')
   const [unidad, setUnidad] = useState<'g' | 'ml' | 'ud'>(inicial?.unidad_base ?? 'g')
-  const [peso, setPeso] = useState(str(inicial?.peso_unidad_g))
+  const [peso, setPeso] = useState(str(inicial?.peso_unidad_aprox ? null : inicial?.peso_unidad_g))
   const [prot, setProt] = useState(str(inicial?.proteina_100))
   const [kcal, setKcal] = useState(str(inicial?.kcal_100))
   const [hc, setHc] = useState(str(inicial?.hidratos_100))
@@ -200,7 +200,7 @@ export default function NuevoIngrediente({
         </label>
         <label>
           Peso de 1 unidad (g)
-          <input inputMode="decimal" value={peso} onChange={(e) => setPeso(e.target.value)} placeholder="ej. huevo 60" />
+          <input inputMode="decimal" value={peso} onChange={(e) => setPeso(e.target.value)} placeholder={inicial?.peso_unidad_aprox ? `≈ ${inicial.peso_unidad_g} (pieza mediana)` : 'ej. huevo 60'} />
         </label>
       </div>
       <label className="check">

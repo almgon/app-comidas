@@ -110,7 +110,7 @@ export function porcionesPorRacion(
     if (!ing) continue
     const grupo = grupoRacion(ing)
     if (!grupo) continue
-    const g = gramosDe(l, ing)
+    const g = gramosDe(l, ing, r)
     if (g == null) {
       res.sinContar.push(l.texto_original)
       continue

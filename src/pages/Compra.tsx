@@ -67,6 +67,19 @@ export default function Compra() {
     }
   }
 
+  async function vaciar() {
+    if (!confirm('Se borrará la lista entera, también lo añadido a mano y lo marcado. ¿Seguir?')) return
+    setGenerando(true)
+    setError(null)
+    try {
+      await semana.vaciarLista()
+    } catch (e: any) {
+      setError(e.message)
+    } finally {
+      setGenerando(false)
+    }
+  }
+
   const fila = (a: ArticuloCompra) => {
     const ing = a.ingredient_id ? mapaIngredientes.get(a.ingredient_id) : undefined
     const quien = a.comprado && a.comprado_por !== sesion?.user.id ? nombre(a.comprado_por) : null
@@ -141,12 +154,14 @@ export default function Compra() {
         </div>
       ) : (
         <>
-          {desfasada && (
-            <div className="aviso fila espacio">
-              <span>El menú ha cambiado desde que se hizo la lista.</span>
-              <button className="boton" onClick={generar} disabled={generando}>{generando ? '…' : 'Actualizar'}</button>
-            </div>
-          )}
+          {desfasada && <p className="aviso">El menú ha cambiado desde que se hizo la lista: toca «Actualizar con el menú».</p>}
+          <div className="fila margen-arriba">
+            <button className={`boton ${desfasada ? 'primario' : ''}`} onClick={generar} disabled={generando}>
+              {generando ? 'Calculando…' : '🔄 Actualizar con el menú'}
+            </button>
+            <button className="boton peligro" onClick={vaciar} disabled={generando}>🗑 Vaciar lista</button>
+          </div>
+          <p className="suave pequeno">Actualizar recalcula las cantidades con el menú de la semana y conserva lo marcado y lo añadido a mano. Vaciar la borra entera.</p>
           {hayPrecios ? (
             <section className="tarjeta comparador">
               <div className="totales">
@@ -168,7 +183,6 @@ export default function Compra() {
             <label className="check">
               <input type="checkbox" checked={ocultar} onChange={(e) => setOcultar(e.target.checked)} disabled={repaso} /> Ocultar lo comprado
             </label>
-            {!desfasada && <button className="enlace" onClick={generar} disabled={generando}>Recalcular</button>}
           </div>
           <form
             className="fila margen-arriba"

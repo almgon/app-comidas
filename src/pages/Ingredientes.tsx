@@ -80,7 +80,7 @@ export default function Ingredientes() {
                   <tr key={i.id}>
                     <td>
                       {i.nombre}
-                      {i.peso_unidad_g ? <span className="suave"> · {fmt(i.peso_unidad_g)} g/ud</span> : null}
+                      {i.peso_unidad_g ? <span className="suave"> · {i.peso_unidad_aprox ? '≈ ' : ''}{fmt(i.peso_unidad_g)} g/ud</span> : null}
                       {i.household_id && <span className="chip">propio</span>}
                       {usos.get(i.id) ? <span className="suave"> · en {usos.get(i.id)} recetas</span> : null}
                     </td>

@@ -3,14 +3,12 @@ import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useDatos } from '../lib/datos'
 import { fmt } from '../lib/nutricion'
-import { KCAL_POR_KG, objetivosPersona } from '../lib/tipos'
 
 export default function Ajustes() {
   const { perfil, hogar, miembros, sesion, guardarPerfil, renombrarHogar, recetas } = useDatos()
   const [nombre, setNombre] = useState(perfil?.nombre ?? '')
   const [peso, setPeso] = useState(perfil?.peso_kg?.toString() ?? '')
   const [factor, setFactor] = useState(perfil?.factor_racion?.toString() ?? '1')
-  const [kcal, setKcal] = useState(perfil?.kcal_objetivo?.toString() ?? '')
   const [error, setError] = useState<string | null>(null)
   const [nombreHogar, setNombreHogar] = useState(hogar?.nombre ?? '')
   const [ok, setOk] = useState<string | null>(null)
@@ -19,12 +17,10 @@ export default function Ajustes() {
 
   async function guardar() {
     setError(null)
-    const k = Math.round(Number(kcal.replace(',', '.')))
     const cambios = {
       nombre: nombre.trim(),
       peso_kg: peso ? Number(peso.replace(',', '.')) : null,
       factor_racion: Number(factor.replace(',', '.')) || 1,
-      ...(kcal.trim() || perfil?.kcal_objetivo != null ? { kcal_objetivo: kcal.trim() && k >= 800 && k <= 6000 ? k : null } : {}),
     }
     try {
       await guardarPerfil(cambios)
@@ -60,20 +56,7 @@ export default function Ajustes() {
             <input inputMode="decimal" value={factor} onChange={(e) => setFactor(e.target.value)} />
           </label>
         </div>
-        <p className="suave">El factor escala tu ración: 1 = una ración normal, 1,25 = un 25 % más.</p>
-        <label>
-          Objetivo de kcal al día (opcional)
-          <input inputMode="numeric" value={kcal} onChange={(e) => setKcal(e.target.value)} placeholder={peso ? `Estimado: ${fmt(objetivosPersona(Number(peso.replace(',', '.'))).kcal)} kcal` : 'kcal'} />
-        </label>
-        {peso && (() => {
-          const o = objetivosPersona(Number(peso.replace(',', '.')), kcal.trim() ? Number(kcal) : null)
-          return (
-            <p className="suave">
-              Objetivos diarios: <b>{fmt(o.kcal)} kcal</b> · proteína {o.protMin}-{o.protMax} g (1,2-1,6 g/kg) · hidratos {o.hcMin}-{o.hcMax} g (45-60 %) · grasa {o.grasaMin}-{o.grasaMax} g (20-35 %).
-              {!kcal.trim() && ` Las kcal se estiman con ${KCAL_POR_KG} kcal por kg (adulto que entrena 3-4 días por semana); si sabes las tuyas, ponlas arriba.`}
-            </p>
-          )
-        })()}
+        <p className="suave">El factor escala tu ración: 1 = una ración normal, 1,25 = un 25 % más. El peso solo se usa como referencia de proteína.</p>
       </section>
 
       <section className="tarjeta formulario">

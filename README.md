@@ -2,14 +2,14 @@
 
 PWA para planificar las comidas de la semana entre dos personas. **Fase 1: recetario compartido. Fase 2: menú semanal y lista de la compra.**
 
-- Menú semanal generado solo con vuestras recetas (sin IA): frecuencias AESAN, proteína diaria por persona, sin repetir plato el mismo día, cenas de entre semana ≤ 30 min, lunes y martes del domingo, congelador primero y bases reutilizadas. Se fija, se regenera y se edita a mano.
+- Menú semanal generado solo con vuestras recetas (sin IA): frecuencias AESAN, proteína diaria por persona, sin repetir plato el mismo día, lunes y martes del domingo, congelador primero y bases reutilizadas. Se fija, se regenera y se edita a mano.
 - Desayunos fijos (L-V y fin de semana) con cantidades por persona.
 - Domingo de cocina (bases + platos, nevera o congelador) e inventario del congelador.
 - Lista de la compra compartida en tiempo real, agrupada, en envases y por pasillo.
 - Precios de Mercadona: se actualizan cada semana con un GitHub Action (`scripts/precios/`) y la lista muestra el coste de cada producto y el total.
 
 - Recetas propias con foto, raciones, tiempos, ingredientes, pasos, etiquetas, notas, favorita y valoración.
-- Clasificación para el planificador: comida/cena, grupo proteico principal, cena rápida (≤ 30 min), congelable y días en nevera.
+- Clasificación para el planificador: comida/cena, grupo proteico principal, congelable y días en nevera.
 - Preparaciones base (boloñesa, sofrito…) que se usan como ingrediente de otras recetas.
 - Proteína y kcal por ración calculadas con un catálogo de ingredientes (BEDCA aproximado), y por persona según su factor de ración.
 - Importación sin IA: webs con schema.org/Recipe, texto de publicaciones de TikTok (oEmbed) e Instagram, o pegando el texto. Siempre con pantalla de revisión.

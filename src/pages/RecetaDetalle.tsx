@@ -5,7 +5,7 @@ import { fmt, nutricionPorRacion, pesoReceta } from '../lib/nutricion'
 import { useMenu } from '../lib/menu'
 import TartaPlato, { ChipPlato } from '../components/TartaPlato'
 import { GRUPOS_PLATO, grupoInferido, platoPorRacion, tipoRangos, type GrupoPlato } from '../lib/plato'
-import { PAPELES, aptaCenaRapida, etiquetaGrupo, etiquetaTipo, papelDe, tiempoTotal } from '../lib/tipos'
+import { PAPELES, etiquetaGrupo, etiquetaTipo, papelDe, tiempoTotal } from '../lib/tipos'
 import { porcionesPorRacion } from '../lib/grupos'
 import { ChipsRaciones } from '../components/Raciones'
 
@@ -73,7 +73,6 @@ export default function RecetaDetalle() {
         {conPapel && <span className="chip">{PAPELES.find((p) => p.valor === papelDe(receta))!.emoji} {PAPELES.find((p) => p.valor === papelDe(receta))!.etiqueta}</span>}
         <ChipsRaciones p={porciones} />
         {!receta.es_base && (!conPapel || papelDe(receta) === 'completo') && <ChipPlato reparto={plato.reparto} tipo={tipoPlato} />}
-        {aptaCenaRapida(receta) && <span className="chip rapida">Cena entre semana</span>}
         {receta.congelable && <span className="chip">❄️ Congelable</span>}
         {receta.dias_nevera != null && <span className="chip">🧊 {receta.dias_nevera} días en nevera</span>}
         {receta.etiquetas.map((e) => (
