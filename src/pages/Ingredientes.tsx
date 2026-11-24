@@ -4,7 +4,7 @@ import { normalizar } from '../../shared/parser.js'
 import { useDatos } from '../lib/datos'
 import { fmt } from '../lib/nutricion'
 import NuevoIngrediente from '../components/NuevoIngrediente'
-import { GRUPOS_PLATO, grupoInferido, type GrupoPlato } from '../lib/plato'
+import { GRUPOS_PLATO, grupoInferido, type GrupoPlato } from '../lib/reparto'
 
 export default function Ingredientes() {
   const nav = useNavigate()
@@ -46,7 +46,7 @@ export default function Ingredientes() {
         </div>
       )}
       <p className="suave">Valores aproximados por 100 g o 100 ml. Los del catálogo común no se editan; crea tu propia versión si necesitas otros valores.</p>
-      <p className="suave">🍽️ Grupo del método del plato: la app lo deduce de la sección y el nombre («Auto»). Si alguno no te cuadra, cámbialo aquí (vale también para los del catálogo común).</p>
+      <p className="suave">🍽️ Grupo (verduras, proteínas, hidratos o grasas) para los porcentajes del día: la app lo deduce de la sección y el nombre («Auto»). Si alguno no te cuadra, cámbialo aquí (vale también para los del catálogo común).</p>
       {errorGrupo && <p className="error">{errorGrupo}</p>}
       {[...porCategoria.entries()].sort(([a], [b]) => a.localeCompare(b, 'es')).map(([cat, items]) => (
         <section key={cat} className="tarjeta">
@@ -90,7 +90,7 @@ export default function Ingredientes() {
                       <select
                         className="mini-select"
                         value={i.grupo_plato ?? ''}
-                        aria-label={`Grupo del plato de ${i.nombre}`}
+                        aria-label={`Grupo de ${i.nombre}`}
                         onChange={(e) => {
                           setErrorGrupo(null)
                           guardarGrupoPlato(i.id, (e.target.value || null) as GrupoPlato | null).catch((x) => setErrorGrupo(x.message))

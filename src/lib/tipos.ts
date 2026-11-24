@@ -1,6 +1,5 @@
 export type TipoComida = 'comida' | 'cena' | 'ambas' | 'desayuno'
-export type GrupoProteico = 'legumbre' | 'pescado_blanco' | 'pescado_azul' | 'carne_blanca' | 'carne_roja' | 'huevo' | 'vegetal'
-/** Grupo del método del plato: verdura y fruta, proteína, hidratos, grasa saludable u «otro» (no cuenta) */
+/** Grupo de un ingrediente para el reparto del día: verdura y fruta, proteína, hidratos, grasa u «otro» (no cuenta) */
 export type GrupoPlato = 'verdura' | 'proteina' | 'hidratos' | 'grasa' | 'otro'
 export type FuenteTipo = 'web' | 'instagram' | 'tiktok' | 'texto' | 'manual'
 /** Papel de una receta en el menú: plato completo (lentejas), principal (pollo a la plancha) o guarnición (arroz, verduras) */
@@ -21,17 +20,6 @@ export const TIPOS_COMIDA: { valor: TipoComida; etiqueta: string }[] = [
   { valor: 'desayuno', etiqueta: 'Desayuno' },
 ]
 
-export const GRUPOS_PROTEICOS: { valor: GrupoProteico; etiqueta: string; emoji: string }[] = [
-  { valor: 'legumbre', etiqueta: 'Legumbre', emoji: '🫘' },
-  { valor: 'pescado_blanco', etiqueta: 'Pescado blanco', emoji: '🐟' },
-  { valor: 'pescado_azul', etiqueta: 'Pescado azul', emoji: '🐠' },
-  { valor: 'carne_blanca', etiqueta: 'Carne blanca', emoji: '🍗' },
-  { valor: 'carne_roja', etiqueta: 'Carne roja', emoji: '🥩' },
-  { valor: 'huevo', etiqueta: 'Huevo', emoji: '🥚' },
-  { valor: 'vegetal', etiqueta: 'Vegetal', emoji: '🥦' },
-]
-
-export const etiquetaGrupo = (g: GrupoProteico | null | undefined) => GRUPOS_PROTEICOS.find((x) => x.valor === g)
 export const etiquetaTipo = (t: TipoComida) => TIPOS_COMIDA.find((x) => x.valor === t)?.etiqueta ?? t
 
 export interface Hogar {
@@ -40,6 +28,8 @@ export interface Hogar {
   codigo_invitacion: string
   desayunos_iniciados?: boolean
   umbral_ahorro?: number
+  /** veces por semana que se quiere comer cada tipo de alimento (migración 011; si falta, los valores por defecto) */
+  frecuencias?: Partial<Record<string, number | null>> | null
 }
 
 export interface Perfil {
@@ -69,7 +59,7 @@ export interface Ingrediente {
   codigo_off?: string | null
   envase_cantidad?: number | null
   envase_nombre?: string | null
-  /** grupo del método del plato elegido a mano por el hogar (si no, se deduce) */
+  /** grupo (verdura, proteína, hidratos, grasa) elegido a mano por el hogar (si no, se deduce) */
   grupo_plato?: GrupoPlato | null
 }
 
@@ -93,7 +83,6 @@ export interface Receta {
   t_prep_min: number | null
   t_coccion_min: number | null
   tipo_comida: TipoComida
-  grupo_proteico: GrupoProteico | null
   es_base: boolean
   /** papel en el menú (migración 010; si falta, plato completo) */
   papel?: Papel

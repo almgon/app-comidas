@@ -4,16 +4,15 @@ import { useDatos } from '../lib/datos'
 import { useComensales, useSemana } from '../lib/menu'
 import { useContextoMenu } from '../lib/contexto'
 import { useSemanaElegida } from '../lib/useSemanaElegida'
-import { MOMENTOS_DIA, avisosMenu, avisosRecetario, comidaConSobras, generarMenu, indicadores, objetivos, ordenDe, otraAnadida, problemasEntrada } from '../lib/generador'
+import { MOMENTOS_DIA, avisosMenu, avisosRecetario, comidaConSobras, frecuenciasCtx, generarMenu, indicadores, ordenDe, otraAnadida, problemasEntrada } from '../lib/generador'
 import { DIAS, fechaCorta, fechasSemana } from '../lib/semana'
 import { fmt } from '../lib/nutricion'
-import { ORIGENES, etiquetaGrupo, papelDe, racionesHogar, type Comensal, type EntradaPlan, type Momento } from '../lib/tipos'
+import { ORIGENES, papelDe, racionesHogar, type EntradaPlan, type Momento } from '../lib/tipos'
 import SelectorSemana, { EnlacesSemana } from '../components/SelectorSemana'
 import SelectorPlato from '../components/SelectorPlato'
-import TartaPlato, { Tarta } from '../components/TartaPlato'
-import { repartoHueco, tipoRangos } from '../lib/plato'
-import { evaluarDia, evaluarFrutosSecos, porcionesPersona, type Porciones } from '../lib/grupos'
-import { EstadoRaciones } from '../components/Raciones'
+import { REPARTO_CERO, repartoEntradas, sumarReparto } from '../lib/reparto'
+import { INFO_TIPOS, evaluarFrecuencias, type TipoAlimento } from '../lib/frecuencias'
+import { BarraReparto, ChipTipo } from '../components/Reparto'
 
 const NOMBRE_MOMENTO: Record<Momento, string> = { desayuno: 'Desayuno', comida: 'Comida', cena: 'Cena' }
 const clave = (e: Pick<EntradaPlan, 'fecha' | 'momento' | 'orden'>) => `${e.fecha}|${e.momento}|${ordenDe(e)}`
@@ -31,17 +30,15 @@ export default function Menu() {
   const [eligiendo, setEligiendo] = useState<{ fecha: string; momento: Momento; orden: number } | null>(null)
   const [generando, setGenerando] = useState(false)
   const [verAvisos, setVerAvisos] = useState(false)
-  const [detalleDia, setDetalleDia] = useState<string | null>(null)
-  const [verPlato, setVerPlato] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const fechas = fechasSemana(lunes)
   const porClave = useMemo(() => new Map(semana.entradas.map((e) => [clave(e), e])), [semana.entradas])
   const delHueco = (fecha: string, momento: Momento) => semana.entradas.filter((e) => e.fecha === fecha && e.momento === momento).sort((a, b) => ordenDe(a) - ordenDe(b))
   const ind = useMemo(() => indicadores(semana.entradas, ctx), [semana.entradas, ctx])
-  const obj = objetivos(ind)
+  const frec = evaluarFrecuencias(ind.conteo, frecuenciasCtx(ctx), ind.escala)
   const avisos = useMemo(() => {
-    const a = avisosRecetario(recetas, ctx.porciones)
+    const a = avisosRecetario(recetas, ctx)
     if (semana.entradas.some((e) => e.recipe_id || e.origen === 'libre'))
       a.push(...avisosMenu(fechas.flatMap((f) => (['comida', 'cena'] as Momento[]).map((m) => porClave.get(`${f}|${m}|0`) ?? { fecha: f, momento: m, orden: 0, recipe_id: null, raciones: ctx.raciones, origen: 'fresco' as const, freezer_item_id: null, fijado: false, nota: null })), ctx))
     return a
@@ -49,24 +46,16 @@ export default function Menu() {
 
   const factorHogar = racionesHogar(comensales)
   const completos = useMemo(() => fechas.map((f) => diaCompleto(semana.entradas.filter((e) => e.fecha === f))), [fechas, semana.entradas])
-  // Método del plato de cada desayuno, comida y cena (todas sus recetas y alimentos sueltos juntos)
-  const platoHueco = (fecha: string, momento: Momento) => {
-    const lista = delHueco(fecha, momento)
-    if (!lista.some((e) => e.recipe_id || e.extras?.length) || lista.some((e) => e.origen === 'libre')) return null
-    return repartoHueco(lista, ctx.platos ?? new Map(), mapaIngredientes, factorHogar)
-  }
-  // Raciones de cada grupo (verdura, hidratos, lácteos…) de cada persona, cada día
-  const porcDias = useMemo(
-    () => fechas.map((f) => new Map<string, Porciones>(comensales.map((c) => [c.id, porcionesPersona(semana.entradas.filter((e) => e.fecha === f), c.factor, ctx.porciones ?? new Map(), mapaIngredientes, factorHogar)]))),
-    [fechas, comensales, semana.entradas, ctx.porciones, mapaIngredientes, factorHogar],
+  // % de verduras, proteínas, hidratos y grasas de cada día (desayuno, comida y cena juntos)
+  const repartoDias = useMemo(
+    () => fechas.map((f) => repartoEntradas(semana.entradas.filter((e) => e.fecha === f), ctx.repartos ?? new Map(), mapaIngredientes, factorHogar)),
+    [fechas, semana.entradas, ctx.repartos, mapaIngredientes, factorHogar],
   )
-  const resumenRaciones = (c: Comensal) => {
-    const dias = completos.map((completo, d) => ({ completo, p: porcDias[d].get(c.id)! })).filter((x) => x.completo)
-    if (!dias.length) return null
-    const bien = (g: 'verdura' | 'hidratos' | 'lacteos') => dias.filter((x) => evaluarDia(x.p).find((e) => e.grupo === g)!.estado === 'verde').length
-    const frutos = evaluarFrutosSecos(dias.reduce((t, x) => t + x.p.frutos_secos, 0), dias.length)
-    return { dias: dias.length, verdura: bien('verdura'), hidratos: bien('hidratos'), lacteos: bien('lacteos'), frutos }
-  }
+  // Media de la semana (solo los días completos, para que un día a medias no la desvíe)
+  const repartoSemana = useMemo(() => {
+    const dias = repartoDias.filter((d, i) => completos[i] && d.reparto)
+    return dias.length ? { reparto: dias.reduce((t, d) => sumarReparto(t, d.reparto!, 1 / dias.length), { ...REPARTO_CERO }), dias: dias.length } : null
+  }, [repartoDias, completos])
 
   // Bases que se reutilizan en varios platos de la semana
   const basesCompartidas = useMemo(() => {
@@ -157,28 +146,27 @@ export default function Menu() {
           <h2>Esta semana</h2>
           {ind.huecosPlanificados < 14 && <span className="suave">{ind.huecosPlanificados} de 14 comidas en casa</span>}
         </div>
-        <div className="semaforos">
-          {obj.map((o) => (
-            <div key={o.clave} className={`semaforo ${o.estado}`}>
-              <span>{o.etiqueta}</span>
-              <b>{o.texto}</b>
-            </div>
-          ))}
-        </div>
-        <div className="semaforos">
-          {comensales.map((c) => {
-            const r = resumenRaciones(c)
-            if (!r) return null
-            const estado = r.verdura === r.dias && r.hidratos === r.dias ? 'verde' : r.verdura >= r.dias - 2 && r.hidratos >= r.dias - 2 ? 'ambar' : 'rojo'
-            return (
-              <div key={c.id} className={`semaforo ${estado}`}>
-                <span>🥦 Raciones · {c.nombre} <small>(días completos que cumplen)</small></span>
-                <b>Verdura {r.verdura}/{r.dias} · Hidratos {r.hidratos}/{r.dias} · Lácteos {r.lacteos}/{r.dias}</b>
-                <small>Al día: verdura ≥3, hidratos 3-6, lácteos ≤3 · Frutos secos en la semana: {r.frutos.texto} · La fruta va en la lista de la compra (3 al día)</small>
+        {frec.length > 0 ? (
+          <div className="semaforos">
+            {frec.map((o) => (
+              <div key={o.tipo} className={`semaforo ${o.estado}`}>
+                <span>{INFO_TIPOS[o.tipo].emoji} {INFO_TIPOS[o.tipo].etiqueta}</span>
+                <b>{o.valor} de {o.objetivo}</b>
               </div>
-            )
-          })}
-        </div>
+            ))}
+          </div>
+        ) : (
+          <p className="suave">No has elegido cuántas veces comer cada alimento.</p>
+        )}
+        <p className="suave pequeno">
+          Veces por semana en comidas y cenas, según los ingredientes de cada receta. <Link to="/ajustes#frecuencias">Cambiar en Ajustes</Link>
+        </p>
+        {repartoSemana && (
+          <>
+            <h3 className="subtitulo">Media de la semana <span className="suave">({repartoSemana.dias} día{repartoSemana.dias === 1 ? '' : 's'} completo{repartoSemana.dias === 1 ? '' : 's'})</span></h3>
+            <BarraReparto reparto={repartoSemana.reparto} dia />
+          </>
+        )}
       </section>
 
       {avisos.length > 0 && (
@@ -209,32 +197,30 @@ export default function Menu() {
                 {DIAS[dia]} <span className="suave">{fechaCorta(fecha)}</span>
               </h2>
             </div>
-            {comensales[0] && completos[dia] && (
-              <button className="sin-boton raciones-dia" onClick={() => setDetalleDia(detalleDia === fecha ? null : fecha)} title="Raciones del día (por persona)">
-                <EstadoRaciones p={porcDias[dia].get(comensales[0].id)!} compacto />
-              </button>
+            {repartoDias[dia].reparto && (
+              <div className="reparto-dia">
+                <BarraReparto reparto={repartoDias[dia].reparto} compacta />
+                {(!completos[dia] || repartoDias[dia].sinDatos > 0) && (
+                  <span className="suave">
+                    {[
+                      repartoDias[dia].fuera ? 'sin contar lo que se come fuera' : !completos[dia] ? 'día a medias' : '',
+                      repartoDias[dia].sinDatos > 0 ? `${repartoDias[dia].sinDatos} receta${repartoDias[dia].sinDatos === 1 ? '' : 's'} sin ingredientes del catálogo` : '',
+                    ].filter(Boolean).join(' · ')}
+                  </span>
+                )}
+              </div>
             )}
-            {detalleDia === fecha && completos[dia] && <ResumenDia comensales={comensales} porciones={porcDias[dia]} />}
             {MOMENTOS_DIA.map((momento) => {
               const lista = delHueco(fecha, momento)
               const principal = lista.find((e) => ordenDe(e) === 0)
               const anadidas = lista.filter((e) => ordenDe(e) > 0)
               const siguiente = Math.max(0, ...lista.map(ordenDe)) + 1
               const puedeAnadir = principal && principal.origen !== 'libre' && (principal.recipe_id || principal.extras?.length)
-              const reparto = platoHueco(fecha, momento)
-              const kPlato = `${fecha}|${momento}`
               const rPrincipal = principal?.recipe_id ? mapaRecetas.get(principal.recipe_id) : undefined
               const conGuarnicion = momento !== 'desayuno' && !!rPrincipal && papelDe(rPrincipal) === 'principal'
               return (
                 <div key={momento} className={`hueco ${principal?.fijado ? 'fijado' : ''}`}>
-                  <span className="momento momento-col">
-                    {NOMBRE_MOMENTO[momento]}
-                    {reparto && (
-                      <button className="boton-tarta" onClick={() => setVerPlato(verPlato === kPlato ? null : kPlato)} title="Cómo queda el plato (solo informativo)" aria-label="Ver cómo queda el plato">
-                        <Tarta reparto={reparto} size={26} mini />
-                      </button>
-                    )}
-                  </span>
+                  <span className="momento">{NOMBRE_MOMENTO[momento]}</span>
                   <div className="plato">
                     <Plato
                       e={principal}
@@ -244,6 +230,7 @@ export default function Menu() {
                       dia={dia}
                       momento={momento}
                       kcal={principal?.recipe_id ? ctx.macros?.get(principal.recipe_id)?.kcal : undefined}
+                      tipo={principal?.recipe_id ? ctx.tipos?.get(principal.recipe_id) : undefined}
                       onElegir={() => setEligiendo({ fecha, momento, orden: 0 })}
                     />
                     {principal && principal.origen !== 'libre' && (principal.extras?.length ?? 0) > 0 && (
@@ -253,7 +240,7 @@ export default function Menu() {
                     )}
                     {anadidas.map((e) => (
                       <div key={clave(e)} className={`anadida ${e.fijado ? 'fijado' : ''}`}>
-                        <Plato e={e} delDia={delDia} todas={semana.entradas} lunes={lunes} dia={dia} momento={momento} anadida kcal={e.recipe_id ? ctx.macros?.get(e.recipe_id)?.kcal : undefined} onElegir={() => setEligiendo({ fecha, momento, orden: ordenDe(e) })} />
+                        <Plato e={e} delDia={delDia} todas={semana.entradas} lunes={lunes} dia={dia} momento={momento} anadida kcal={e.recipe_id ? ctx.macros?.get(e.recipe_id)?.kcal : undefined} tipo={e.recipe_id ? ctx.tipos?.get(e.recipe_id) : undefined} onElegir={() => setEligiendo({ fecha, momento, orden: ordenDe(e) })} />
                         <div className="acciones-hueco">
                           <button className={`icono ${e.fijado ? 'on' : ''}`} title={e.fijado ? 'Fijada: no cambia al proponer' : 'Fijar'} onClick={() => cambiar({ ...e, fijado: !e.fijado })}>📌</button>
                           <button className="icono" title="Otra receta" onClick={() => otraReceta(e, fecha, momento)} disabled={e.fijado}>🎲</button>
@@ -261,12 +248,6 @@ export default function Menu() {
                         </div>
                       </div>
                     ))}
-                    {verPlato === kPlato && reparto && (
-                      <div className="detalle-plato-hueco">
-                        <TartaPlato reparto={reparto} tipo={tipoRangos(momento)} titulo={`Cómo queda el plato · ${NOMBRE_MOMENTO[momento].toLowerCase()}${lista.filter((e) => e.recipe_id).length > 1 ? ` (${lista.filter((e) => e.recipe_id).length} recetas)` : ''}`} />
-                        <p className="suave pequeno">Solo es orientativo: el equilibrio se mira en el día entero (raciones de verdura, hidratos y lácteos).</p>
-                      </div>
-                    )}
                     {puedeAnadir && (
                       <button className="enlace anadir-receta" onClick={() => setEligiendo({ fecha, momento, orden: siguiente })}>
                         {conGuarnicion ? '+ Añadir guarnición' : '+ Añadir otra receta'}
@@ -319,8 +300,8 @@ export default function Menu() {
 }
 
 function Plato({
-  e, delDia, todas, lunes, dia, momento, kcal, anadida = false, onElegir,
-}: { e: EntradaPlan | undefined; delDia: EntradaPlan[]; todas: EntradaPlan[]; lunes: string; dia: number; momento: Momento; kcal: number | undefined; anadida?: boolean; onElegir: () => void }) {
+  e, delDia, todas, lunes, dia, momento, kcal, tipo, anadida = false, onElegir,
+}: { e: EntradaPlan | undefined; delDia: EntradaPlan[]; todas: EntradaPlan[]; lunes: string; dia: number; momento: Momento; kcal: number | undefined; tipo: TipoAlimento | null | undefined; anadida?: boolean; onElegir: () => void }) {
   const { mapaRecetas } = useDatos()
   const r = e?.recipe_id ? mapaRecetas.get(e.recipe_id) : undefined
   if (e?.origen === 'libre') return <button className="titulo-plato libre" onClick={onElegir}>🚶 Fuera de casa{e.nota ? ` · ${e.nota}` : ''}</button>
@@ -332,7 +313,6 @@ function Plato({
       </button>
     )
   }
-  const g = papelDe(r) === 'guarnicion' ? null : etiquetaGrupo(r.grupo_proteico)
   const problemas = problemasEntrada(e!, delDia, r, dia, todas, lunes)
   const sobrasManana = !anadida && comidaConSobras(todas, e!, lunes)
   const extra = e!.cocinar_extra ?? 0
@@ -342,7 +322,7 @@ function Plato({
       <Link to={`/receta/${r.id}`} className="titulo-plato">{anadida && momento !== 'desayuno' ? <span className="suave">con </span> : null}{r.titulo}</Link>
       <div className="chips">
         {kcal != null && <span className="chip">🔥 {fmt(kcal)} kcal/rac.</span>}
-        {g && <span className={`chip g-${g.valor}`}>{g.emoji} {g.etiqueta}</span>}
+        {momento !== 'desayuno' && papelDe(r) !== 'guarnicion' && <ChipTipo tipo={tipo} />}
         {verOrigen && <span className="chip">{ORIGENES[e!.origen].emoji} {ORIGENES[e!.origen].etiqueta}</span>}
         {sobrasManana && <span className="chip cocina">🥡 Haz el doble: mañana a mediodía</span>}
         {extra > 0 && (
@@ -354,20 +334,6 @@ function Plato({
           <span key={p} className="chip problema">⚠️ {p}</span>
         ))}
       </div>
-    </div>
-  )
-}
-
-/** Raciones de cada grupo de cada uno ese día */
-function ResumenDia({ comensales, porciones }: { comensales: Comensal[]; porciones: Map<string, Porciones> }) {
-  return (
-    <div className="resumen-dia">
-      {comensales.map((c) => (
-        <div key={c.id} className="resumen-persona">
-          <b>{c.nombre}</b>
-          <div><EstadoRaciones p={porciones.get(c.id)!} /></div>
-        </div>
-      ))}
     </div>
   )
 }

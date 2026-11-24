@@ -1,8 +1,71 @@
-import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { Link, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useDatos } from '../lib/datos'
 import { fmt } from '../lib/nutricion'
+import { FRECUENCIAS_POR_DEFECTO, INFO_TIPOS, TIPOS_ALIMENTO, frecuenciasDe, type Frecuencias, type TipoAlimento } from '../lib/frecuencias'
+
+/** Veces por semana que queréis comer cada tipo de alimento (las usa «Proponer semana») */
+function SeccionFrecuencias() {
+  const { hogar, guardarFrecuencias } = useDatos()
+  const guardadas = frecuenciasDe(hogar)
+  const [f, setF] = useState<Frecuencias>(guardadas)
+  const [estado, setEstado] = useState<{ ok?: string; error?: string }>({})
+  const clave = JSON.stringify(guardadas)
+  useEffect(() => setF(JSON.parse(clave)), [clave])
+  const cambiado = JSON.stringify(f) !== clave
+  const total = TIPOS_ALIMENTO.reduce((t, x) => t + (f[x] ?? 0), 0)
+  const poner = (t: TipoAlimento, v: number | null) => setF((x) => ({ ...x, [t]: v == null ? null : Math.max(0, Math.min(14, v)) }))
+
+  async function guardar() {
+    setEstado({})
+    try {
+      await guardarFrecuencias(f)
+      setEstado({ ok: 'Guardado' })
+      setTimeout(() => setEstado({}), 2000)
+    } catch (e: any) {
+      setEstado({ error: e.message })
+    }
+  }
+
+  return (
+    <section className="tarjeta formulario" id="frecuencias">
+      <h2>Veces por semana de cada alimento</h2>
+      <p className="suave">
+        Cuántas comidas y cenas a la semana queréis de cada cosa. «Proponer semana» intenta acercarse a estas veces. El tipo de cada receta sale de sus ingredientes (el que más pesa); el desayuno no cuenta.
+      </p>
+      <div className="frecuencias">
+        {TIPOS_ALIMENTO.map((t) => {
+          const v = f[t]
+          return (
+            <div key={t} className="frecuencia">
+              <div>
+                {INFO_TIPOS[t].emoji} {INFO_TIPOS[t].etiqueta}
+                <small>{INFO_TIPOS[t].ejemplos}</small>
+              </div>
+              <div className="contador">
+                <button type="button" onClick={() => poner(t, (v ?? 0) - 1)} disabled={v == null || v <= 0} aria-label={`Menos ${INFO_TIPOS[t].etiqueta}`}>−</button>
+                <button type="button" className="sin-boton" onClick={() => poner(t, v == null ? FRECUENCIAS_POR_DEFECTO[t] ?? 1 : null)} title={v == null ? 'Elegir un número' : 'Pasar a «da igual»'}>
+                  {v == null ? <span className="suave">da igual</span> : <b>{v}</b>}
+                </button>
+                <button type="button" onClick={() => poner(t, (v ?? 0) + 1)} aria-label={`Más ${INFO_TIPOS[t].etiqueta}`}>+</button>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+      <p className={total > 14 ? 'aviso' : 'suave'}>
+        Suman {total} de 14 comidas y cenas{total > 14 ? ': no caben todas, el menú se quedará corto en alguna.' : total < 14 ? `; las otras ${14 - total} quedan libres (pasta, cremas, verduras…).` : '.'} Toca el número para dejarlo en «da igual».
+      </p>
+      <div className="fila">
+        <button className="boton primario" onClick={guardar} disabled={!cambiado}>Guardar veces</button>
+        <button className="enlace" onClick={() => setF({ ...FRECUENCIAS_POR_DEFECTO })}>Valores por defecto</button>
+        {estado.ok && <span className="ok">{estado.ok}</span>}
+        {estado.error && <span className="error">{estado.error}</span>}
+      </div>
+    </section>
+  )
+}
 
 export default function Ajustes() {
   const { perfil, hogar, miembros, sesion, guardarPerfil, renombrarHogar, recetas } = useDatos()
@@ -14,6 +77,10 @@ export default function Ajustes() {
   const [ok, setOk] = useState<string | null>(null)
   const [copiado, setCopiado] = useState(false)
   const origen = window.location.origin
+  const { hash } = useLocation()
+  useEffect(() => {
+    if (hash) document.getElementById(hash.slice(1))?.scrollIntoView({ block: 'start' })
+  }, [hash])
 
   async function guardar() {
     setError(null)
@@ -89,6 +156,8 @@ export default function Ajustes() {
         {ok && <span className="ok">{ok}</span>}
         {error && <span className="error">{error}</span>}
       </div>
+
+      <SeccionFrecuencias />
 
       <section className="tarjeta">
         <h2>Catálogo de ingredientes</h2>

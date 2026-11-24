@@ -3,9 +3,9 @@ import { Link } from 'react-router-dom'
 import { normalizar } from '../../shared/parser.js'
 import { useDatos } from '../lib/datos'
 import TarjetaReceta from '../components/TarjetaReceta'
-import { GRUPOS_PROTEICOS, papelDe, tiempoTotal, type GrupoProteico, type Receta } from '../lib/tipos'
+import { papelDe, tiempoTotal, type Receta } from '../lib/tipos'
 import { useMenu } from '../lib/menu'
-import { evaluarPlato, platoPorRacion, tipoRangos, type EstadoPlato } from '../lib/plato'
+import { INFO_TIPOS, TIPOS_ALIMENTO, tipoReceta, type TipoAlimento } from '../lib/frecuencias'
 
 type Orden = 'titulo' | 'reciente' | 'valoracion' | 'tiempo'
 type Apartado = 'todas' | 'desayuno' | 'comida' | 'cena' | 'guarnicion' | 'base'
@@ -46,15 +46,11 @@ export default function Recetas() {
     setApartadoE(a)
     localStorage.setItem(CLAVE_APARTADO, a)
   }
-  const [grupo, setGrupo] = useState<GrupoProteico | ''>('')
+  const [grupo, setGrupo] = useState<TipoAlimento | ''>('')
   const [tag, setTag] = useState('')
   const [maxMin, setMaxMin] = useState<number | ''>('')
   const [soloFav, setSoloFav] = useState(false)
-  const [plato, setPlato] = useState<'' | 'cumple' | 'casi'>('')
-  const estadoPlato = useMemo(
-    () => new Map<string, EstadoPlato>(recetas.map((r) => [r.id, evaluarPlato(platoPorRacion(r, mapaIngredientes, mapaRecetas).reparto, tipoRangos('receta', r)).estado])),
-    [recetas, mapaIngredientes, mapaRecetas],
-  )
+  const tipos = useMemo(() => new Map(recetas.map((r) => [r.id, tipoReceta(r, mapaIngredientes, mapaRecetas)])), [recetas, mapaIngredientes, mapaRecetas])
   const [orden, setOrden] = useState<Orden>('titulo')
 
   const filtradas = useMemo(() => {
@@ -67,17 +63,13 @@ export default function Recetas() {
         )
         if (!nq.split(' ').every((p) => texto.includes(p))) return false
       }
-      if (grupo && r.grupo_proteico !== grupo) return false
+      if (grupo && tipos.get(r.id) !== grupo) return false
       if (tag && !r.etiquetas.includes(tag)) return false
       if (maxMin !== '') {
         const t = tiempoTotal(r)
         if (t == null || t > maxMin) return false
       }
       if (soloFav && !r.favorita) return false
-      if (plato) {
-        const e = estadoPlato.get(r.id)
-        if (r.es_base || !(e === 'cumple' || (plato === 'casi' && e === 'casi'))) return false
-      }
       return true
     })
     const cmp: Record<Orden, (a: (typeof res)[0], b: (typeof res)[0]) => number> = {
@@ -87,9 +79,9 @@ export default function Recetas() {
       tiempo: (a, b) => (tiempoTotal(a) ?? 999) - (tiempoTotal(b) ?? 999),
     }
     return res.sort(cmp[orden])
-  }, [recetas, q, grupo, tag, maxMin, soloFav, plato, estadoPlato, orden, mapaIngredientes])
+  }, [recetas, q, grupo, tag, maxMin, soloFav, tipos, orden, mapaIngredientes])
 
-  const nFiltros = [grupo, tag, maxMin, soloFav ? 'fav' : '', plato].filter((x) => x !== '').length
+  const nFiltros = [grupo, tag, maxMin, soloFav ? 'fav' : ''].filter((x) => x !== '').length
 
   return (
     <div>
@@ -120,11 +112,11 @@ export default function Recetas() {
       {verFiltros && (
         <div className="filtros tarjeta">
           <label>
-            Proteína principal
-            <select value={grupo} onChange={(e) => setGrupo(e.target.value as GrupoProteico | '')}>
+            Tipo de alimento
+            <select value={grupo} onChange={(e) => setGrupo(e.target.value as TipoAlimento | '')}>
               <option value="">Todas</option>
-              {GRUPOS_PROTEICOS.map((g) => (
-                <option key={g.valor} value={g.valor}>{g.emoji} {g.etiqueta}</option>
+              {TIPOS_ALIMENTO.map((t) => (
+                <option key={t} value={t}>{INFO_TIPOS[t].emoji} {INFO_TIPOS[t].etiqueta}</option>
               ))}
             </select>
           </label>
@@ -159,14 +151,6 @@ export default function Recetas() {
           <label className="check">
             <input type="checkbox" checked={soloFav} onChange={(e) => setSoloFav(e.target.checked)} /> Solo favoritas
           </label>
-          <label>
-            🍽️ Método del plato
-            <select value={plato} onChange={(e) => setPlato(e.target.value as '' | 'cumple' | 'casi')}>
-              <option value="">Todas</option>
-              <option value="cumple">Cumplen solas</option>
-              <option value="casi">Cumplen o casi</option>
-            </select>
-          </label>
           {nFiltros > 0 && (
             <button
               className="enlace"
@@ -175,7 +159,6 @@ export default function Recetas() {
                 setTag('')
                 setMaxMin('')
                 setSoloFav(false)
-                setPlato('')
               }}
             >
               Quitar filtros

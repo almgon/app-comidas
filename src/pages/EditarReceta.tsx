@@ -4,20 +4,20 @@ import { normalizar, UNIDADES_DISPONIBLES, type RecetaImportada } from '../../sh
 import { useDatos } from '../lib/datos'
 import { mejorSugerencia, sugerencias } from '../lib/emparejar'
 import { subirFoto } from '../lib/fotos'
-import { UNIDADES_BASE, esUnidadBase, fmt, gramosDe, nutricionPorRacion, pesoReceta, proteinaSupuesta } from '../lib/nutricion'
+import { UNIDADES_BASE, esUnidadBase, fmt, nutricionPorRacion, pesoReceta, proteinaSupuesta } from '../lib/nutricion'
 import { PROTEINA_POR_RACION_G, esProteinaPlato } from '../lib/pesos'
 import { useMenu } from '../lib/menu'
 import { useUsarProducto } from '../lib/usarProducto'
 import { euros } from '../lib/precios'
 import SelectorProducto from '../components/SelectorProducto'
 import NuevoIngrediente from '../components/NuevoIngrediente'
+import { ChipReparto, ChipTipo, textoReparto } from '../components/Reparto'
+import { repartoPorRacion } from '../lib/reparto'
+import { tipoReceta } from '../lib/frecuencias'
 import {
-  GRUPOS_PROTEICOS,
   PAPELES,
   TIPOS_COMIDA,
-  etiquetaGrupo,
   type FuenteTipo,
-  type GrupoProteico,
   type Ingrediente,
   type Papel,
   type Receta,
@@ -41,7 +41,6 @@ interface Formulario {
   t_prep_min: string
   t_coccion_min: string
   tipo_comida: TipoComida
-  grupo_proteico: GrupoProteico | ''
   es_base: boolean
   papel: Papel
   congelable: boolean
@@ -76,7 +75,6 @@ const VACIO: Formulario = {
   t_prep_min: '',
   t_coccion_min: '',
   tipo_comida: 'ambas',
-  grupo_proteico: '',
   es_base: false,
   papel: 'completo',
   congelable: false,
@@ -101,7 +99,6 @@ function desdeReceta(r: Receta): Formulario {
     t_prep_min: str(r.t_prep_min),
     t_coccion_min: str(r.t_coccion_min),
     tipo_comida: r.tipo_comida,
-    grupo_proteico: r.grupo_proteico ?? '',
     es_base: r.es_base,
     papel: r.papel ?? 'completo',
     congelable: r.congelable,
@@ -151,41 +148,6 @@ function desdeImportada(r: RecetaImportada, ingredientes: Ingrediente[], bases: 
       }
     }),
   }
-}
-
-// Palabras clave para sugerir el grupo proteico principal
-const PISTAS_GRUPO: [GrupoProteico, RegExp][] = [
-  ['pescado_azul', /salm[oó]n|at[uú]n|sardina|caballa|bonito|boquer[oó]n|anchoa|trucha|jurel|emperador|pez espada/],
-  ['pescado_blanco', /merluza|bacalao|dorada|lubina|rape|gallo|lenguado|abadejo|panga|gamba|langostino|calamar|sepia|pulpo|mejill[oó]n|almeja|marisco|pescado/],
-  ['carne_roja', /ternera|vacuno|buey|cerdo|lomo|solomillo de cerdo|cordero|chorizo|bacon|beicon|panceta|jam[oó]n|salchich|morcilla|costilla|picada/],
-  ['carne_blanca', /pollo|pavo|conejo|pechuga|muslo|contramuslo/],
-  ['legumbre', /lenteja|garbanzo|alubia|jud[ií]a blanca|jud[ií]a pinta|fabe|frijol|soja|tofu|tempeh|guisante|edamame|hummus/],
-  ['huevo', /huevo|tortilla/],
-]
-
-function inferirGrupo(filas: Fila[], mapa: Map<string, Ingrediente>, recetas: Map<string, Receta>): GrupoProteico | null {
-  const puntos = new Map<GrupoProteico, number>()
-  for (const f of filas) {
-    const sub = f.sub_recipe_id ? recetas.get(f.sub_recipe_id) : undefined
-    if (sub?.grupo_proteico) {
-      puntos.set(sub.grupo_proteico, (puntos.get(sub.grupo_proteico) ?? 0) + 50)
-      continue
-    }
-    const ing = f.ingredient_id ? mapa.get(f.ingredient_id) : undefined
-    const texto = normalizar(`${f.nombre} ${ing?.nombre ?? ''}`)
-    const g = ing ? gramosDe({ cantidad: numero(f.cantidad), unidad: f.unidad || null }, ing) : null
-    const peso = g != null && ing?.proteina_100 != null ? (g * ing.proteina_100) / 100 : 5
-    for (const [grupo, re] of PISTAS_GRUPO) {
-      if (re.test(texto)) {
-        puntos.set(grupo, (puntos.get(grupo) ?? 0) + peso)
-        break
-      }
-    }
-  }
-  let mejor: GrupoProteico | null = null
-  let max = 0
-  for (const [g, p] of puntos) if (p > max) [mejor, max] = [g, p]
-  return mejor ?? (filas.length ? 'vegetal' : null)
 }
 
 export default function EditarReceta() {
@@ -252,7 +214,6 @@ export default function EditarReceta() {
     t_prep_min: entero(f.t_prep_min),
     t_coccion_min: entero(f.t_coccion_min),
     tipo_comida: f.tipo_comida,
-    grupo_proteico: f.grupo_proteico || null,
     es_base: f.es_base,
     papel: f.es_base || f.tipo_comida === 'desayuno' ? 'completo' : f.papel,
     congelable: f.congelable,
@@ -276,7 +237,8 @@ export default function EditarReceta() {
     })),
   }
   const nut = nutricionPorRacion({ ...vistaPrevia, proteina_racion_manual: null }, mapaIngredientes, mapaRecetas)
-  const grupoSugerido = inferirGrupo(f.filas, mapaIngredientes, mapaRecetas)
+  const tipoCalculado = tipoReceta(vistaPrevia, mapaIngredientes, mapaRecetas)
+  const repartoCalculado = repartoPorRacion(vistaPrevia, mapaIngredientes, mapaRecetas).reparto
   const total = (entero(f.t_prep_min) ?? 0) + (entero(f.t_coccion_min) ?? 0)
 
   async function alElegirFoto(archivo: File | undefined) {
@@ -301,7 +263,6 @@ export default function EditarReceta() {
   async function enviar(e: FormEvent) {
     e.preventDefault()
     if (!f.titulo.trim()) return setError('Ponle un título a la receta')
-    if (!f.es_base && !f.grupo_proteico && !(f.papel === 'guarnicion' && f.tipo_comida !== 'desayuno')) return setError('Elige el grupo proteico principal (lo usa el planificador)')
     setError(null)
     setGuardando(true)
     try {
@@ -399,21 +360,14 @@ export default function EditarReceta() {
             )}
           </label>
         )}
-        <label>
-          Grupo proteico principal {f.es_base ? '(opcional en bases)' : f.papel === 'guarnicion' && f.tipo_comida !== 'desayuno' ? '(opcional en guarniciones)' : ''}
-          <div className="opciones-grupo">
-            {GRUPOS_PROTEICOS.map((g) => (
-              <button type="button" key={g.valor} className={`chip g-${g.valor} ${f.grupo_proteico === g.valor ? 'on' : ''}`} onClick={() => set('grupo_proteico', f.grupo_proteico === g.valor ? '' : g.valor)}>
-                {g.emoji} {g.etiqueta}
-              </button>
-            ))}
+        <div className="calculado">
+          <span className="suave pequeno">Calculado con los ingredientes (por ración):</span>
+          <div className="chips">
+            <ChipTipo tipo={tipoCalculado} />
+            <ChipReparto reparto={repartoCalculado} />
+            {!tipoCalculado && !textoReparto(repartoCalculado) && <span className="suave pequeno">añade ingredientes con cantidad</span>}
           </div>
-        </label>
-        {grupoSugerido && grupoSugerido !== f.grupo_proteico && (
-          <button type="button" className="enlace" onClick={() => set('grupo_proteico', grupoSugerido)}>
-            Sugerido por los ingredientes: {etiquetaGrupo(grupoSugerido)?.emoji} {etiquetaGrupo(grupoSugerido)?.etiqueta}
-          </button>
-        )}
+        </div>
         <label className="check">
           <input type="checkbox" checked={f.es_base} onChange={(e) => set('es_base', e.target.checked)} />
           Es una preparación base (boloñesa, sofrito, legumbre cocida…) que se usa en otras recetas

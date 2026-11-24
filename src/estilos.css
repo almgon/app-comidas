@@ -302,8 +302,6 @@ input.mini-num { width: 70px; padding: .35rem .4rem; }
 .anadida.fijado .titulo-plato::before { content: '📌 '; font-size: .8rem; }
 .anadir-receta { align-self: flex-start; font-size: .85rem; }
 .sin-boton { background: none; border: none; padding: 0; cursor: pointer; color: inherit; font: inherit; }
-.resumen-dia { display: flex; flex-direction: column; gap: .3rem; margin: .2rem 0 .4rem; font-size: .82rem; }
-.resumen-persona .chips { display: inline-flex; margin-left: .3rem; }
 .chip.falta { background: #e8f0fd; border-color: #b9cdf3; color: #1f4b99; }
 .chip.sobra { background: #fdecea; border-color: #f2c1ba; color: #8a2318; }
 .chip.ok { background: #dff3e6; border-color: #b5e0c4; color: #1d6b3d; }
@@ -325,58 +323,37 @@ input.mini-num { width: 70px; padding: .35rem .4rem; }
 .lista-simple li { padding-bottom: .5rem; border-bottom: 1px solid var(--borde); gap: .5rem; }
 .lista-simple li:last-child { border-bottom: none; }
 
-/* Método del plato (colores validados para daltonismo; siempre con leyenda y % escritos) */
+/* Reparto del día: verduras, proteínas, hidratos y grasas (colores validados para daltonismo; siempre con leyenda y % escritos) */
 :root { --p-verdura: #1baf7a; --p-proteina: #e87ba4; --p-hidratos: #eda100; --p-grasa: #2a78d6; }
 @media (prefers-color-scheme: dark) {
   :root { --p-verdura: #199e70; --p-proteina: #dd6e99; --p-hidratos: #c98500; --p-grasa: #3987e5; }
 }
-.tarta { flex: none; }
-.tarta .porcion { stroke: var(--tarjeta); stroke-linejoin: round; }
-.tarta .tarta-vacia { fill: var(--fondo); stroke: var(--borde); }
-.tarta .tarta-guia { stroke: var(--texto); stroke-opacity: .35; stroke-width: 1; stroke-dasharray: 3 3; fill: none; pointer-events: none; }
-.p-verdura { fill: var(--p-verdura); background: var(--p-verdura); }
-.p-proteina { fill: var(--p-proteina); background: var(--p-proteina); }
-.p-hidratos { fill: var(--p-hidratos); background: var(--p-hidratos); }
-.p-grasa { fill: var(--p-grasa); background: var(--p-grasa); }
-.plato-metodo h3 { margin: 0 0 .4rem; font-size: 1rem; }
-.plato-fila { display: flex; gap: 1rem; align-items: center; }
-.leyenda-plato { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .3rem; font-size: .9rem; flex: 1; min-width: 0; }
-.leyenda-plato li { display: grid; grid-template-columns: 12px 1fr auto; column-gap: .4rem; align-items: center; }
-.leyenda-plato .muestra { width: 12px; height: 12px; border-radius: 3px; }
-.leyenda-plato b { text-align: right; }
-.leyenda-plato small { grid-column: 2 / 4; color: var(--suave); font-size: .72rem; }
-.leyenda-plato small.fuera { color: var(--ambar); }
-.estado-plato { margin: .6rem 0 .2rem; font-weight: 600; font-size: .9rem; }
-.estado-plato.plato-cumple { color: #1d6b3d; }
-.estado-plato.plato-casi { color: var(--ambar); }
-.estado-plato.plato-no { color: var(--rojo); }
-@media (prefers-color-scheme: dark) {
-  .estado-plato.plato-cumple { color: #7fd3a0; }
-}
+.p-verdura { background: var(--p-verdura); }
+.p-proteina { background: var(--p-proteina); }
+.p-hidratos { background: var(--p-hidratos); }
+.p-grasa { background: var(--p-grasa); }
 .pequeno { font-size: .75rem; }
-.chip.plato-cumple { background: #dff3e6; border-color: #b5e0c4; color: #1d6b3d; }
-.chip.plato-casi { background: #fff6e0; border-color: #f0d28a; color: #6b4e00; }
-.chip.plato-no { background: #fdecea; border-color: #f2c1ba; color: #8a2318; }
-.boton-tarta { display: inline-flex; align-items: center; gap: .3rem; background: none; border: 0; padding: 0; cursor: pointer; color: inherit; font: inherit; }
-.momento-col { display: flex; flex-direction: column; align-items: flex-start; gap: .25rem; }
-.detalle-plato-hueco { background: var(--fondo); border-radius: 10px; padding: .6rem; margin-top: .3rem; }
+.reparto-barra { display: flex; flex-direction: column; gap: .3rem; margin: .2rem 0 .4rem; }
+.reparto-barra .barra { display: flex; height: 10px; border-radius: 5px; overflow: hidden; background: var(--fondo); gap: 2px; }
+.reparto-barra.compacta .barra { height: 7px; }
+.reparto-barra .barra span { display: block; height: 100%; }
+.reparto-barra p { margin: .1rem 0 0; }
+.leyenda-reparto { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: .2rem .8rem; font-size: .82rem; }
+.leyenda-reparto li { display: inline-flex; align-items: center; gap: .3rem; }
+.leyenda-reparto .muestra { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.reparto-dia { margin: .2rem 0 .4rem; }
+.reparto-dia .suave { font-size: .75rem; }
+.chip.reparto { font-variant-numeric: tabular-nums; }
 .origen-plato { margin-top: .6rem; font-size: .85rem; }
 .origen-plato summary { cursor: pointer; color: var(--verde); }
 .origen-plato table { width: 100%; border-collapse: collapse; margin-top: .4rem; }
 .origen-plato td { padding: .2rem .2rem; border-bottom: 1px solid var(--borde); vertical-align: middle; }
 .origen-plato select { padding: .2rem .3rem; font-size: .85rem; width: auto; }
 .mini-select { padding: .15rem .25rem; font-size: .8rem; width: auto; max-width: 110px; }
-
-/* Raciones por grupo (verdura, hidratos, lácteos) con semáforo */
-.chip.racion-verde { background: #dff3e6; border-color: #b5e0c4; color: #1d6b3d; }
-.chip.racion-ambar { background: #fff6e0; border-color: #f0d28a; color: #6b4e00; }
-.chip.racion-rojo { background: #fde8e6; border-color: #f2b8b2; color: #8a1f14; }
-@media (prefers-color-scheme: dark) {
-  .chip.racion-verde { background: #1f3a2a; color: #a6e0bb; border-color: #2d5a3d; }
-  .chip.racion-ambar { background: #3a3010; color: #f3dc9c; border-color: #5a4a18; }
-  .chip.racion-rojo { background: #3d1c19; color: #f2b8b2; border-color: #5e2a25; }
-}
-.raciones-dia { display: block; margin: .2rem 0 .3rem; text-align: left; }
+.frecuencias { display: flex; flex-direction: column; gap: .45rem; }
+.frecuencia { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: .5rem; }
+.frecuencia small { display: block; color: var(--suave); font-size: .72rem; }
+.frecuencia .contador button:disabled { opacity: .4; }
 .chip.cocina { background: #e8f0fe; border-color: #c3d5fa; color: #1c4aa0; }
 @media (prefers-color-scheme: dark) { .chip.cocina { background: #1b2a45; color: #b8cdf5; border-color: #2c4370; } }
 .congelar-extra { display: flex; flex-direction: column; gap: .3rem; margin: .5rem 0; font-size: .9rem; }
@@ -394,3 +371,6 @@ input.mini-num { width: 70px; padding: .35rem .4rem; }
 .hueco-hoy .momento { font-size: .75rem; color: var(--suave); text-transform: uppercase; letter-spacing: .03em; padding-top: .15rem; }
 .segmentado.ancho { flex-wrap: wrap; }
 .hueco-hoy .chip, .plato-linea .chip.cocina { white-space: normal; }
+.subtitulo { font-size: .95rem; margin: .8rem 0 .2rem; }
+.calculado { display: flex; flex-direction: column; gap: .2rem; }
+.frecuencia .contador .sin-boton { width: auto; min-width: 4.5rem; height: auto; border: none; background: none; border-radius: 0; font-size: .95rem; text-align: center; }

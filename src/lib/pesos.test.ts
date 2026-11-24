@@ -9,7 +9,7 @@ const ing = (id: string, nombre: string, categoria: string, extra: Partial<Ingre
 })
 const linea = (ingredient_id: string, cantidad: number | null, unidad: string | null): LineaIngrediente => ({ orden: 0, ingredient_id, sub_recipe_id: null, cantidad, unidad, texto_original: ingredient_id })
 const receta = (raciones: number, ingredientes: LineaIngrediente[]): Receta => ({
-  id: 'r', household_id: 'h', titulo: 'Plato', foto_url: null, raciones, t_prep_min: 10, t_coccion_min: 20, tipo_comida: 'ambas', grupo_proteico: 'carne_blanca',
+  id: 'r', household_id: 'h', titulo: 'Plato', foto_url: null, raciones, t_prep_min: 10, t_coccion_min: 20, tipo_comida: 'ambas',
   es_base: false, congelable: false, dias_nevera: 3, valoracion: null, favorita: false, proteina_racion_manual: null, fuente_url: null, fuente_tipo: 'manual',
   notas: null, creado_en: '', actualizado_en: '', ingredientes, pasos: [], etiquetas: [],
 })

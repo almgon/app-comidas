@@ -6,11 +6,11 @@ import { useMenu, useSemana, useComensales } from '../lib/menu'
 import { useContextoMenu } from '../lib/contexto'
 import { sesionDomingo } from '../lib/batch'
 import { MOMENTOS_DIA, cenaAnterior, comidaConSobras, ordenDe } from '../lib/generador'
-import { porcionesPersona } from '../lib/grupos'
+import { repartoEntradas } from '../lib/reparto'
 import { aIso, DIAS, deIso, fechaCorta, indiceDia, lunesDe, sumarDias } from '../lib/semana'
 import { fmt } from '../lib/nutricion'
 import { racionesHogar, tiempoTotal, type EntradaPlan, type Momento } from '../lib/tipos'
-import { EstadoRaciones } from '../components/Raciones'
+import { BarraReparto } from '../components/Reparto'
 
 const NOMBRE_MOMENTO: Record<Momento, string> = { desayuno: 'Desayuno', comida: 'Comida', cena: 'Cena' }
 
@@ -100,15 +100,14 @@ function DiasDeSemana({ lunes, fechas, hoy, manana, onDescongelar }: { lunes: st
         const delDia = semana.entradas.filter((e) => e.fecha === fecha)
         const dia = indiceDia(lunes, fecha)
         const vacio = !delDia.some((e) => e.recipe_id || e.extras?.length || e.origen === 'libre')
-        const c0 = comensales[0]
         return (
           <section key={fecha} className="tarjeta dia-hoy">
             <div className="fila espacio">
               <h2>
                 {fecha === hoy ? 'Hoy' : 'Mañana'} <span className="suave">{DIAS[dia]} {fechaCorta(fecha)}</span>
               </h2>
-              {c0 && !vacio && <EstadoRaciones p={porcionesPersona(delDia, c0.factor, ctx.porciones ?? new Map(), mapaIngredientes, factorHogar)} compacto />}
             </div>
+            {!vacio && <BarraReparto reparto={repartoEntradas(delDia, ctx.repartos ?? new Map(), mapaIngredientes, factorHogar).reparto} compacta />}
             {vacio && (
               <p className="suave">
                 No hay nada planificado. <Link to={`/menu?semana=${lunes}`}>Prepara el menú</Link>
