@@ -4,8 +4,8 @@ import { admiteSobras, cenaAnterior, esComidaDeBatch, opcionesHueco, ordenDe, pr
 import { useDatos } from '../lib/datos'
 import { DIAS, fechasSemana, fechaCorta } from '../lib/semana'
 import { fmt } from '../lib/nutricion'
-import { ChipsRaciones } from './Raciones'
-import { ORIGENES, etiquetaGrupo, tiempoTotal, type EntradaPlan, type Extra, type Momento, type Origen } from '../lib/tipos'
+import { ChipReparto, ChipTipo } from './Reparto'
+import { ORIGENES, tiempoTotal, type EntradaPlan, type Extra, type Momento, type Origen } from '../lib/tipos'
 
 interface Props {
   /** orden 0 = receta principal del hueco; 1, 2… = recetas añadidas */
@@ -71,7 +71,6 @@ export default function SelectorPlato({ hueco, ctx, actual, delDia, entradas, on
 
   const fila = (o: Opcion, conProblemas = false) => {
     const r = recetas.get(o.recipe_id)!
-    const g = etiquetaGrupo(r.grupo_proteico)
     const t = tiempoTotal(r)
     const p = ctx.proteina.get(r.id)
     const m = ctx.macros?.get(r.id)
@@ -83,11 +82,11 @@ export default function SelectorPlato({ hueco, ctx, actual, delDia, entradas, on
         <button onClick={() => onElegir(entrada(o))}>
           <span className="titulo">{r.favorita ? '★ ' : ''}{r.titulo}</span>
           <span className="chips">
-            {g && <span className={`chip g-${g.valor}`}>{g.emoji} {g.etiqueta}</span>}
+            <ChipTipo tipo={ctx.tipos?.get(r.id)} />
             {t != null && <span className="chip">⏱ {t} min</span>}
             {m && <span className="chip">🔥 {fmt(m.kcal)} kcal</span>}
             {p != null && <span className="chip">💪 {fmt(p)} g</span>}
-            <ChipsRaciones p={ctx.porciones?.get(r.id)} />
+            <ChipReparto reparto={ctx.repartos?.get(r.id)} />
             <span className="chip">{ORIGENES[o.origen].emoji} {o.origen === 'congelador' && c ? `${fmt(c.raciones, 1)} rac. · ${fechaCorta(c.congelado_en)}` : ORIGENES[o.origen].etiqueta}</span>
             {n > 0 && <span className="chip">ya {n}× esta semana</span>}
             {problemas.map((x) => (
@@ -139,7 +138,7 @@ export default function SelectorPlato({ hueco, ctx, actual, delDia, entradas, on
           </div>
         )}
         <input type="search" placeholder={anadida ? 'Buscar guarnición…' : 'Buscar receta…'} value={q} onChange={(e) => setQ(e.target.value)} />
-        {ctx.porciones && <p className="suave pequeno">🥦 verdura · 🍚 hidratos · 🥛 lácteos: raciones por persona que aporta cada receta.</p>}
+        {ctx.repartos && <p className="suave pequeno">🥦 verduras · 🍗 proteínas · 🍚 hidratos · 🫒 grasas: % del peso de cada receta.</p>}
         <ul className="opciones-plato">
           {sobras.length > 0 && <li className="grupo">🥡 Sobras de la cena de ayer</li>}
           {sobras.map((o) => fila(o))}

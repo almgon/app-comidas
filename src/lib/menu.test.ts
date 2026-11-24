@@ -1,18 +1,22 @@
 import { describe, expect, it } from 'vitest'
-import { avisosRecetario, costeDia, generarMenu, indicadores, objetivos, ordenDe, otraAnadida, type ContextoMenu } from './generador'
+import { avisosRecetario, frecuenciasCtx, generarMenu, indicadores, ordenDe, otraAnadida, type ContextoMenu } from './generador'
+import { evaluarFrecuencias, type TipoAlimento } from './frecuencias'
 import { nutricionPorRacion, racionesDeBase, pesoReceta } from './nutricion'
 import { sesionDomingo } from './batch'
 import { calcularCompra } from './compra'
 import { enEnvases, aUnidadBase } from './cantidades'
 import { fechasSemana, indiceDia, semanaPorDefecto } from './semana'
-import { comensalesDe, type Ingrediente, type Receta, type GrupoProteico, type TipoComida, type EntradaPlan } from './tipos'
+import { comensalesDe, type Ingrediente, type Receta, type TipoComida, type EntradaPlan } from './tipos'
 
 let n = 0
-function receta(titulo: string, grupo: GrupoProteico | null, extra: Partial<Receta> = {}): Receta {
+/** En estos tests las recetas no llevan ingredientes: el tipo de alimento se da directamente */
+const tipoDe = new Map<string, TipoAlimento | null>()
+function receta(titulo: string, grupo: TipoAlimento | null, extra: Partial<Receta> = {}): Receta {
   n++
+  tipoDe.set(`r${n}`, grupo)
   return {
     id: `r${n}`, household_id: 'h', titulo, foto_url: null, raciones: 4, t_prep_min: 15, t_coccion_min: 30, tipo_comida: 'ambas' as TipoComida,
-    grupo_proteico: grupo, es_base: false, congelable: false, dias_nevera: 3, valoracion: null, favorita: false, proteina_racion_manual: null,
+    es_base: false, congelable: false, dias_nevera: 3, valoracion: null, favorita: false, proteina_racion_manual: null,
     fuente_url: null, fuente_tipo: 'manual', notas: null, creado_en: '', actualizado_en: '', ingredientes: [], pasos: [], etiquetas: [], ...extra,
   }
 }
@@ -28,7 +32,7 @@ const comensales = [
 
 function ctxCon(recetas: Receta[]): ContextoMenu {
   return {
-    lunes: LUNES, recetas, proteina: new Map(recetas.map((r) => [r.id, 35])), comensales, congelados: [], raciones: 2.25,
+    lunes: LUNES, recetas, proteina: new Map(recetas.map((r) => [r.id, 35])), tipos: new Map(recetas.map((r) => [r.id, tipoDe.get(r.id) ?? null])), comensales, congelados: [], raciones: 2.25,
   }
 }
 
@@ -78,12 +82,13 @@ describe('generador', () => {
       if (e.momento === 'comida' && dia <= 1) expect(e.origen).toBe('batch')
       expect(r.tipo_comida === 'ambas' || r.tipo_comida === e.momento).toBe(true)
     }
+    // veces por semana por defecto: legumbre 4, pescado blanco 2, azul 1, carne blanca 3, roja 1, huevo 2
     const ind = indicadores(entradas, ctx)
-    expect(ind.legumbre).toBeGreaterThanOrEqual(4)
-    expect(ind.pescado).toBeGreaterThanOrEqual(3)
-    expect(ind.pescadoAzul).toBeGreaterThanOrEqual(1)
-    expect(ind.carneRoja).toBeLessThanOrEqual(2)
-    expect(objetivos(ind).find((o) => o.clave === 'legumbre')!.estado).toBe('verde')
+    expect(ind.conteo.legumbre).toBe(4)
+    expect(ind.conteo.pescado_blanco + ind.conteo.pescado_azul).toBeGreaterThanOrEqual(3)
+    expect(ind.conteo.pescado_azul).toBeGreaterThanOrEqual(1)
+    expect(ind.conteo.carne_roja).toBeLessThanOrEqual(2)
+    expect(evaluarFrecuencias(ind.conteo, frecuenciasCtx(ctx)).find((o) => o.tipo === 'legumbre')!.estado).toBe('verde')
   })
 
   it('elige desayunos entre las recetas de desayuno y cuenta su proteína', () => {
@@ -128,9 +133,12 @@ describe('generador', () => {
     expect(entradas.every((e) => e.recipe_id === null || e.recipe_id === rs[0].id)).toBe(true)
     expect(entradas.filter((e) => e.recipe_id === null).length).toBeGreaterThan(0)
     expect(avisos.length).toBeGreaterThan(0)
-    const rec = avisosRecetario(rs).join(' ')
+    const rec = avisosRecetario(rs, ctx).join(' ')
     expect(rec).not.toMatch(/30 min/) // ya no hay reglas de tiempo
-    expect(rec).toMatch(/pescado/)
+    expect(rec).toMatch(/pescado azul 1 vez a la semana, pero no hay ninguna receta/)
+    // si en Ajustes da igual el pescado, no avisa
+    const sinPescado = avisosRecetario(rs, { ...ctx, frecuencias: { ...frecuenciasCtx(ctx), pescado_blanco: null, pescado_azul: 0 } }).join(' ')
+    expect(sinPescado).not.toMatch(/pescado/)
   })
 
   it('usa primero lo congelado', () => {
@@ -311,7 +319,7 @@ describe('kcal y macros', () => {
     expect(avisosRecetario(rs).join(' ')).not.toMatch(/rápida|30 min/)
   })
 
-  it('a los principales les añade guarniciones y el día queda más ajustado', () => {
+  it('a los principales les añade guarniciones', () => {
     const rs = [
       ...variado().map((r) => ({ ...r, papel: 'principal' as const })),
       receta('Ensalada de garbanzos', 'legumbre', { t_prep_min: 10, t_coccion_min: 0 }),
@@ -338,8 +346,11 @@ describe('kcal y macros', () => {
       const ids = delDia.map((e) => e.recipe_id).filter(Boolean)
       expect(new Set(ids).size).toBe(ids.length) // nada se repite en el mismo día
       for (const m of ['desayuno', 'comida', 'cena']) expect(delDia.filter((e) => e.momento === m && ordenDe(e) > 0).length).toBeLessThanOrEqual(2)
-      const sin = delDia.filter((e) => ordenDe(e) === 0)
-      if (delDia.length > sin.length) expect(costeDia(ctx, delDia)).toBeLessThan(costeDia(ctx, sin))
+      // cada principal lleva al menos una guarnición
+      for (const m of ['comida', 'cena'] as const) {
+        const p = delDia.find((e) => e.momento === m && ordenDe(e) === 0)
+        if (p && rs.find((r) => r.id === p.recipe_id)?.papel === 'principal') expect(delDia.filter((e) => e.momento === m && ordenDe(e) > 0).length).toBeGreaterThanOrEqual(1)
+      }
     }
     // las fijadas se respetan y las demás se recalculan
     const fija = { ...anadidas[0], fijado: true }
@@ -352,13 +363,12 @@ describe('kcal y macros', () => {
     expect(entradas.filter((e) => e.fecha === cambio.fecha && e !== aCambiar).some((e) => e.recipe_id === cambio.recipe_id)).toBe(false)
   })
 
-  it('no añade nada si el día ya está en su objetivo', () => {
+  it('a los platos completos y a los desayunos no les añade nada', () => {
     const rs = variado()
     const ctx = ctxCon(rs)
     ctx.macros = new Map(rs.map((r) => [r.id, { kcal: 850, proteina: 40, hidratos: 100, grasa: 30 }]))
     ctx.comensales = comensalesDe([{ id: 'a', household_id: 'h', nombre: 'Alberto', peso_kg: 70, factor_racion: 1 }])
     const { entradas } = generarMenu(ctx, [], { rnd: semilla(12) })
-    // 420 (desayuno estimado) + 2 × 850 = 2120 kcal, dentro del ±10 % de 2240
     expect(entradas.filter((e) => ordenDe(e) > 0)).toHaveLength(0)
   })
 })

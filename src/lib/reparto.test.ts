@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { evaluarPlato, factorCocinado, grupoInferido, grupoPlato, platoPorRacion, porcentajes, repartoHueco, type Reparto } from './plato'
+import { factorCocinado, grupoInferido, grupoPlato, porcentajes, repartoEntradas, repartoPorRacion, tipoGuarnicion, type Reparto } from './reparto'
 import type { Ingrediente, LineaIngrediente, Receta } from './tipos'
 
 const ing = (id: string, nombre: string, categoria: string, extra: Partial<Ingrediente> = {}): Ingrediente => ({
@@ -10,7 +10,7 @@ const linea = (ingredient_id: string, cantidad: number, unidad = 'g', sub_recipe
 })
 let n = 0
 const receta = (titulo: string, ingredientes: LineaIngrediente[], extra: Partial<Receta> = {}): Receta => ({
-  id: `p${++n}`, household_id: 'h', titulo, foto_url: null, raciones: 1, t_prep_min: 10, t_coccion_min: 10, tipo_comida: 'ambas', grupo_proteico: null, es_base: false,
+  id: `p${++n}`, household_id: 'h', titulo, foto_url: null, raciones: 1, t_prep_min: 10, t_coccion_min: 10, tipo_comida: 'ambas', es_base: false,
   congelable: false, dias_nevera: 3, valoracion: null, favorita: false, proteina_racion_manual: null, fuente_url: null, fuente_tipo: 'manual', notas: null,
   creado_en: '', actualizado_en: '', ingredientes, pasos: [], etiquetas: [], ...extra,
 })
@@ -36,7 +36,7 @@ const CATALOGO = [
 ]
 const mapa = new Map(CATALOGO.map((i) => [i.id, i]))
 
-describe('grupos del plato', () => {
+describe('grupos de cada ingrediente', () => {
   it('clasifica el catálogo por sección y nombre', () => {
     const g = (nombre: string, cat: string) => grupoInferido(ing('x', nombre, cat))
     expect(g('Calabacín', 'Verdura')).toBe('verdura')
@@ -70,39 +70,54 @@ describe('grupos del plato', () => {
 })
 
 describe('reparto de una receta', () => {
-  it('calcula los % por peso y dice si cumple', () => {
+  it('calcula los % por peso, sin objetivos', () => {
     const r = receta('Pollo con verduras y arroz', [linea('pollo', 120), linea('calabacin', 200), linea('cebolla', 50), linea('arrozc', 110), linea('aceite', 10), linea('sal', 2)])
-    const p = platoPorRacion(r, mapa, new Map())
+    const p = repartoPorRacion(r, mapa, new Map())
     expect(p.reparto.verdura).toBe(250)
     expect(p.reparto.otro).toBe(2)
     const pc = porcentajes(p.reparto)!
     expect(pc.verdura).toBeCloseTo((250 / 490) * 100)
-    expect(evaluarPlato(p.reparto).estado).toBe('cumple')
-    const sinVerdura = platoPorRacion(receta('Pasta con pollo', [linea('pasta', 100), linea('pollo', 120)]), mapa, new Map())
-    const ev = evaluarPlato(sinVerdura.reparto)
-    expect(ev.estado).toBe('no')
-    expect(ev.consejos).toContain('Falta verdura')
+    const sinVerdura = repartoPorRacion(receta('Pasta con pollo', [linea('pasta', 100), linea('pollo', 120)]), mapa, new Map())
+    expect(porcentajes(sinVerdura.reparto)!.verdura).toBe(0)
+    expect(porcentajes(null)).toBeNull()
   })
 
   it('las preparaciones base cuentan en proporción a lo que se usa', () => {
     const bolo = receta('Boloñesa', [linea('carne', 500), linea('tomate', 400), linea('cebolla', 150)], { es_base: true, raciones: 4 })
     const recetas = new Map([[bolo.id, bolo]])
     const plato = receta('Pasta boloñesa', [linea(bolo.id, 210, 'g', bolo.id), linea('pasta', 80)])
-    const p = platoPorRacion(plato, mapa, recetas)
+    const p = repartoPorRacion(plato, mapa, recetas)
     expect(p.reparto.proteina).toBeCloseTo(100) // 210 de 1050 g → una quinta parte de la carne
     expect(p.reparto.verdura).toBeCloseTo(110)
     expect(p.reparto.hidratos).toBeCloseTo(80 * 2.3)
   })
 
-  it('el desayuno es más flexible', () => {
-    const r: Reparto = { verdura: 120, proteina: 125, hidratos: 200, grasa: 15, otro: 200 } // fruta + yogur + avena en cocido + nueces
-    expect(evaluarPlato(r, 'principal').estado).not.toBe('cumple')
-    expect(evaluarPlato(r, 'desayuno').estado).toBe('cumple')
+  it('suma el día entero: recetas y alimentos sueltos (repartidos entre el hogar), sin contar lo de fuera', () => {
+    const platos = new Map<string, Reparto | null>([
+      ['a', { verdura: 200, proteina: 100, hidratos: 0, grasa: 5, otro: 0 }],
+      ['b', { verdura: 50, proteina: 0, hidratos: 150, grasa: 10, otro: 0 }],
+      ['c', null],
+    ])
+    const d = repartoEntradas(
+      [
+        { recipe_id: 'b', origen: 'fresco', extras: [{ ingredient_id: 'pan', cantidad: 120 }] },
+        { recipe_id: 'a', origen: 'fresco', extras: [] },
+        { recipe_id: 'c', origen: 'fresco', extras: [] },
+        { recipe_id: null, origen: 'libre', extras: [] },
+      ],
+      platos, mapa, 2,
+    )
+    expect(d.reparto!.hidratos).toBe(150 + 60)
+    expect(d.reparto!.verdura).toBe(250)
+    expect(d.sinDatos).toBe(1)
+    expect(d.fuera).toBe(true)
+    const pc = porcentajes(d.reparto)!
+    expect(pc.verdura + pc.proteina + pc.hidratos + pc.grasa).toBeCloseTo(100)
   })
 
-  it('suma las recetas y los alimentos sueltos de un hueco', () => {
-    const platos = new Map<string, Reparto | null>([['a', { verdura: 200, proteina: 0, hidratos: 0, grasa: 5, otro: 0 }]])
-    const r = repartoHueco([{ recipe_id: 'a', origen: 'fresco', extras: [{ ingredient_id: 'pan', cantidad: 120 }] }], platos, mapa, 2)
-    expect(r!.hidratos).toBe(60)
+  it('sabe si una guarnición es de verdura o de hidratos', () => {
+    expect(tipoGuarnicion({ verdura: 200, proteina: 0, hidratos: 0, grasa: 5, otro: 0 })).toBe('verdura')
+    expect(tipoGuarnicion({ verdura: 0, proteina: 0, hidratos: 196, grasa: 0, otro: 0 })).toBe('hidratos')
+    expect(tipoGuarnicion(null)).toBe('otra')
   })
 })

@@ -23,10 +23,12 @@ interface Datos {
   actualizarReceta: (id: string, cambios: Partial<Pick<Receta, 'favorita' | 'valoracion' | 'papel'>>) => Promise<void>
   guardarIngrediente: (i: Partial<Ingrediente> & { nombre: string }) => Promise<Ingrediente>
   borrarIngrediente: (id: string) => Promise<void>
-  /** grupo del método del plato elegido a mano (null = el que deduce la app) */
+  /** grupo de un ingrediente (verdura, proteína, hidratos, grasa) elegido a mano (null = el que deduce la app) */
   guardarGrupoPlato: (ingredientId: string, grupo: GrupoPlato | null) => Promise<void>
   guardarPerfil: (cambios: Partial<Pick<Perfil, 'nombre' | 'peso_kg' | 'factor_racion'>>) => Promise<void>
   renombrarHogar: (nombre: string) => Promise<void>
+  /** veces por semana de cada tipo de alimento (legumbre, pescado…) */
+  guardarFrecuencias: (f: Record<string, number | null>) => Promise<void>
 }
 
 const Ctx = createContext<Datos | null>(null)
@@ -42,7 +44,8 @@ const SELECT_RECETAS =
   '*, recipe_ingredients!recipe_ingredients_recipe_id_fkey(id, orden, ingredient_id, sub_recipe_id, cantidad, unidad, texto_original), recipe_steps(orden, texto), recipe_tags(tags(nombre))'
 
 function aReceta(row: any): Receta {
-  const { recipe_ingredients, recipe_steps, recipe_tags, ...r } = row
+  // grupo_proteico: columna antigua, ya no se usa (el tipo de alimento se deduce de los ingredientes)
+  const { recipe_ingredients, recipe_steps, recipe_tags, grupo_proteico: _gp, ...r } = row
   return {
     ...r,
     raciones: Number(r.raciones),
@@ -191,6 +194,7 @@ export function DatosProvider({ children }: { children: ReactNode }) {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'recipe_tags' }, programar)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'ingredients' }, programar)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'ingredient_grupos' }, programar)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'households' }, programar)
       .subscribe()
     const alVolver = () => document.visibilityState === 'visible' && recargar()
     document.addEventListener('visibilitychange', alVolver)
@@ -327,6 +331,18 @@ export function DatosProvider({ children }: { children: ReactNode }) {
     [hogarId, recargar],
   )
 
+  const guardarFrecuencias = useCallback(
+    async (frecuencias: Record<string, number | null>) => {
+      if (!hogarId) return
+      const r = await supabase.from('households').update({ frecuencias }).eq('id', hogarId)
+      if (r.error && /frecuencias/.test(r.error.message)) throw new Error('Falta ejecutar la migración 011 en Supabase para guardar las veces por semana (mira la guía).')
+      chk(r)
+      setHogar((h) => (h ? { ...h, frecuencias } : h))
+      await recargar()
+    },
+    [hogarId, recargar],
+  )
+
   const mapaRecetas = useMemo(() => new Map(recetas.map((r) => [r.id, r])), [recetas])
   const mapaIngredientes = useMemo(() => new Map(ingredientes.map((i) => [i.id, i])), [ingredientes])
 
@@ -351,6 +367,7 @@ export function DatosProvider({ children }: { children: ReactNode }) {
     guardarGrupoPlato,
     guardarPerfil,
     renombrarHogar,
+    guardarFrecuencias,
   }
   return <Ctx.Provider value={valor}>{children}</Ctx.Provider>
 }

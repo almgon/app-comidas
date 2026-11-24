@@ -97,7 +97,7 @@ Primeros pasos en la app:
 
 ## Método del plato (migración 009)
 
-> Desde la migración 010 el menú ya no obliga a que cada comida cumpla el método del plato: la tarta queda como información y el equilibrio se mira en el día entero (ver abajo).
+> **Ya no se usa el método del plato** (desde la migración 011): de esta sección solo queda el grupo de cada ingrediente (pasos 1-4), que sirve para los porcentajes del día. Mira «Porcentajes del día y veces por semana» más abajo.
 
 1. **Supabase → SQL Editor → New query**: pega [`supabase/migrations/009_metodo_plato.sql`](supabase/migrations/009_metodo_plato.sql) y pulsa **Run**. No borra nada. Sin este paso todo funciona igual, pero no se puede cambiar a mano el grupo de un ingrediente.
 2. En el iPhone, cierra la app del todo y vuelve a abrirla (a veces dos veces).
@@ -113,7 +113,7 @@ Primeros pasos en la app:
 2. En el iPhone, cierra la app del todo y vuelve a abrirla (a veces dos veces). Ahora se abre en **☀️ Hoy**; el menú de la semana está en **🗓️ Menú**.
 3. **Papel de cada receta** (en la receta o al editarla): 🍲 *plato completo* (lentejas, macarrones con boloñesa), 🍗 *principal* (filete de pollo, merluza a la plancha) o 🥗 *guarnición* (arroz, patatas, quinoa, ensalada, verduras asadas). Todas las recetas que ya tenías quedan como plato completo: cambia las que sean principales o guarniciones. Una guarnición puede ser solo un ingrediente con sus gramos por ración, sin pasos.
 4. **Proponer semana** pone un plato completo solo o un principal con 1-2 guarniciones (mejor una de verdura y otra de hidratos). 🎲 en una guarnición la cambia por otra del mismo tipo.
-5. **Equilibrio por raciones (AESAN)**, por persona y día: verdura ≥3 raciones (150 g), hidratos 3-6 (70 g de arroz o pasta en crudo, 50 g de pan, 200 g de patata), lácteos ≤3. Por semana: legumbre ≥4, pescado 3-4 (1 azul), carne 3-4 (roja ≤2), huevo ≤4, frutos secos ≥3. La fruta va en la lista de la compra (3 piezas al día). Los objetivos están en `src/lib/grupos.ts`.
+5. ~~**Equilibrio por raciones (AESAN)**~~ (sustituido por la migración 011, ver abajo). Antes era, por persona y día: verdura ≥3 raciones (150 g), hidratos 3-6 (70 g de arroz o pasta en crudo, 50 g de pan, 200 g de patata), lácteos ≤3. Por semana: legumbre ≥4, pescado 3-4 (1 azul), carne 3-4 (roja ≤2), huevo ≤4, frutos secos ≥3. La fruta va en la lista de la compra (3 piezas al día). Los objetivos están en `src/lib/grupos.ts`.
 6. **Cuándo se cocina** cada plato: 🔥 ese día, 🍲 el domingo, 🥡 sobras de la cena de ayer (de miércoles a domingo a mediodía: la cena se hace el doble) o ❄️ del congelador. Además, la semana propone **2 platos congelables para hacer de más y congelar** para la semana siguiente (se puede cambiar en cada plato: «Cocinar de más para congelar»). Lo del domingo se congela al cerrar la sesión; lo de otros días, con «✓ Hecho: al congelador» en **Hoy**.
 7. **Hoy** enseña hoy y mañana: qué toca, qué cocinar y cuánto, y arriba lo que hay que **sacar del congelador esta noche**.
 8. **Compra**: al recalcular la lista ya no se pierde lo marcado (tampoco si el otro está comprando); sin cobertura se puede añadir y quitar (se guarda al volver la conexión). «🏠 Repasar lo que ya hay en casa» quita de la lista lo que ya tenéis y no vuelve al recalcularla.
@@ -129,3 +129,13 @@ No hace falta SQL: basta con cerrar la app del todo en el iPhone y volver a abri
 4. **Sin objetivos de kcal**: el menú ya no ajusta ni avisa por kcal, hidratos o grasa. Se equilibra por raciones (verdura, hidratos, lácteos) y frecuencias AESAN. Las kcal de cada receta se siguen viendo como información.
 5. **Pesos aproximados**: la verdura y la fruta que no tienen peso por unidad usan el de una pieza mediana («2 patatas» = 400 g, «1 brócoli» = 400 g; la lista está en `src/lib/pesos.ts`). En Ingredientes se ven con «≈». Si pones el peso a mano en el ingrediente, manda el tuyo.
 6. **Proteína sin peso**: la carne, el pescado, el tofu… sin gramos en la receta («pechuga de pollo», «4 filetes de merluza») cuentan **150 g por ración** para la compra, la nutrición y las raciones. Si pones los gramos, se usan los tuyos.
+
+
+## Porcentajes del día y veces por semana (migración 011)
+
+1. **Supabase → SQL Editor → New query**: pega [`supabase/migrations/011_frecuencias.sql`](supabase/migrations/011_frecuencias.sql) y pulsa **Run**. No borra nada. Sin este paso todo funciona con los valores por defecto, pero no se pueden guardar las veces por semana en Ajustes.
+2. En el iPhone, cierra la app del todo y vuelve a abrirla (a veces dos veces).
+3. **Se quita** el método del plato de cada receta, las raciones de la AESAN y el «grupo proteico principal» de las recetas (la columna se queda en la base de datos, sin uso).
+4. **% de verduras, proteínas, hidratos y grasas** de cada día (y la media de la semana) en el **Menú** y en **Hoy**. Se calcula con los ingredientes, **por peso en el plato ya cocinado** (no por kcal: la verdura casi no tiene kcal). Es solo información, sin objetivos. El grupo de cada ingrediente se puede cambiar en la receta («De dónde sale cada grupo») o en Ajustes → Ingredientes.
+5. **Ajustes → Veces por semana de cada alimento**: legumbre, pescado blanco, pescado azul, carne blanca, carne roja, huevo y proteína vegetal, en comidas y cenas (el desayuno no cuenta). Por defecto 4 / 2 / 1 / 3 / 1 / 2 / da igual. «Proponer semana» intenta cumplirlas.
+6. El **tipo de cada receta** sale de sus ingredientes: el que más pesa por ración (con al menos 40 g). Un taco de jamón en unas lentejas no las hace «carne». Las recetas sin ingredientes vinculados al catálogo no cuentan (sale un aviso en el Menú).

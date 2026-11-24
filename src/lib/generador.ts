@@ -1,12 +1,13 @@
 // Generador del menú semanal (sin IA): puntuación + búsqueda aleatoria con mejora local.
 // Usa SOLO las recetas del recetario del hogar. Si faltan recetas para cumplir las reglas, lo dice.
 // Cada comida o cena es un plato completo (lentejas) o un principal con 1-2 guarniciones (pollo + arroz + verduras).
-// El equilibrio se mide por raciones de cada grupo en el día y en la semana (AESAN), no plato a plato.
-import { papelDe, type Comensal, type Congelado, type EntradaPlan, type GrupoProteico, type Ingrediente, type Momento, type Origen, type Receta } from './tipos'
+// Se busca comer cada tipo de alimento (legumbre, pescado, carne…) las veces a la semana elegidas en Ajustes.
+// El tipo de cada receta se deduce de sus ingredientes. El % de verdura, proteína, hidratos y grasa del día es solo informativo.
+import { papelDe, type Comensal, type Congelado, type EntradaPlan, type Ingrediente, type Momento, type Origen, type Receta } from './tipos'
 import { DIAS, fechasSemana } from './semana'
 import type { Macros } from './nutricion'
-import type { Reparto } from './plato'
-import { PORCIONES_CERO, desajustePorciones, porcionesEstimadas, porcionesPersona, sumarPorciones, tipoGuarnicion, type Porciones } from './grupos'
+import { conDatos, tipoGuarnicion, type Reparto } from './reparto'
+import { CONTEO_CERO, FRECUENCIAS_POR_DEFECTO, INFO_TIPOS, TIPOS_ALIMENTO, contarTipos, desajusteFrecuencias, evaluarFrecuencias, type Conteo, type Frecuencias, type TipoAlimento } from './frecuencias'
 
 export const MOMENTOS: Momento[] = ['comida', 'cena']
 
@@ -35,17 +36,15 @@ export interface ContextoMenu {
   proteina: Map<string, number | null>
   /** kcal y macros por ración de cada receta (null si no se sabe) */
   macros?: Map<string, Macros | null>
-  /** reparto del método del plato por ración de cada receta (solo informativo) */
-  platos?: Map<string, Reparto | null>
-  /** raciones de cada grupo (verdura, hidratos…) por ración de cada receta (null si no se sabe) */
-  porciones?: Map<string, Porciones | null>
+  /** gramos por ración de verdura, proteína, hidratos y grasa de cada receta (null si no se sabe) */
+  repartos?: Map<string, Reparto | null>
+  /** tipo de alimento de cada receta (legumbre, pescado azul…), deducido de sus ingredientes */
+  tipos?: Map<string, TipoAlimento | null>
+  /** veces por semana de cada tipo (Ajustes); si falta, las de por defecto */
+  frecuencias?: Frecuencias
   /** catálogo (para los alimentos sueltos) */
   ingredientes?: Map<string, Ingrediente>
   comensales: Comensal[]
-  /** uso interno: raciones de cada grupo que ya se comen cada día, por comensal */
-  basePorciones?: Map<string, Porciones[]>
-  /** uso interno: lo que suele sumar acompañar un principal con sus guarniciones */
-  acomp?: Acompanamiento
   /** congelador disponible (raciones que quedan, sin contar lo ya reservado por las entradas fijas) */
   congelados: Congelado[]
   raciones: number
@@ -127,19 +126,13 @@ export function comidaConSobras<T extends Pick<EntradaPlan, 'fecha' | 'momento' 
 }
 
 // ---------------------------------------------------------
-// Indicadores AESAN y proteína
+// Veces por semana de cada tipo de alimento y proteína
 // ---------------------------------------------------------
 export interface Indicadores {
   huecosPlanificados: number
   escala: number
-  legumbre: number
-  pescado: number
-  pescadoAzul: number
-  carne: number
-  carneRoja: number
-  huevo: number
-  vegetal: number
-  sinGrupo: number
+  /** veces que se come cada tipo en comidas y cenas */
+  conteo: Conteo
   /** proteína por comensal y día (null si no hay datos de algún plato) */
   proteinaDia: Map<string, number[]>
   /** platos sin dato de proteína */
@@ -148,23 +141,21 @@ export interface Indicadores {
 
 type EntradaMin = Pick<EntradaPlan, 'fecha' | 'momento' | 'recipe_id' | 'origen'> & Partial<Pick<EntradaPlan, 'orden'>>
 
-/** Frecuencias AESAN con comida y cena (las guarniciones no cuentan); la proteína del día cuenta también el desayuno */
-export function indicadores(entradas: EntradaMin[], ctx: Pick<ContextoMenu, 'lunes' | 'recetas' | 'proteina' | 'comensales'>, estimarDesconocida = 0): Indicadores {
+export const frecuenciasCtx = (ctx: Pick<ContextoMenu, 'frecuencias'>) => ctx.frecuencias ?? FRECUENCIAS_POR_DEFECTO
+
+/** Tipos con comida y cena (una vez por hueco); la proteína del día cuenta también el desayuno */
+export function indicadores(entradas: EntradaMin[], ctx: Pick<ContextoMenu, 'lunes' | 'recetas' | 'proteina' | 'comensales' | 'tipos'>, estimarDesconocida = 0): Indicadores {
   const recetas = new Map(ctx.recetas.map((r) => [r.id, r]))
   const fechas = fechasSemana(ctx.lunes)
-  const ind: Indicadores = {
-    huecosPlanificados: 0, escala: 0, legumbre: 0, pescado: 0, pescadoAzul: 0, carne: 0, carneRoja: 0, huevo: 0, vegetal: 0, sinGrupo: 0,
-    proteinaDia: new Map(), sinProteina: 0,
-  }
   const libres = entradas.filter((e) => e.origen === 'libre' && e.momento !== 'desayuno' && ordenDe(e) === 0).length
-  ind.huecosPlanificados = 14 - libres
-  ind.escala = ind.huecosPlanificados / 14
+  const ind: Indicadores = {
+    huecosPlanificados: 14 - libres, escala: (14 - libres) / 14, conteo: contarTipos(entradas, ctx.tipos ?? new Map()), proteinaDia: new Map(), sinProteina: 0,
+  }
   const protPlatos = fechas.map(() => 0)
   for (const e of entradas) {
     if (e.origen === 'libre' || !e.recipe_id) continue
     const r = recetas.get(e.recipe_id)
     if (!r) continue
-    if (e.momento !== 'desayuno' && papelDe(r) !== 'guarnicion') contarGrupo(ind, r.grupo_proteico)
     const d = fechas.indexOf(e.fecha)
     const p = ctx.proteina.get(r.id)
     if (p == null) ind.sinProteina++
@@ -174,47 +165,7 @@ export function indicadores(entradas: EntradaMin[], ctx: Pick<ContextoMenu, 'lun
   return ind
 }
 
-function contarGrupo(ind: Indicadores, g: GrupoProteico | null) {
-  switch (g) {
-    case 'legumbre': ind.legumbre++; break
-    case 'pescado_blanco': ind.pescado++; break
-    case 'pescado_azul': ind.pescado++; ind.pescadoAzul++; break
-    case 'carne_blanca': ind.carne++; break
-    case 'carne_roja': ind.carne++; ind.carneRoja++; break
-    case 'huevo': ind.huevo++; break
-    case 'vegetal': ind.vegetal++; break
-    default: ind.sinGrupo++
-  }
-}
-
 export type Semaforo = 'verde' | 'ambar' | 'rojo'
-export interface Objetivo {
-  clave: string
-  etiqueta: string
-  valor: number
-  texto: string
-  estado: Semaforo
-}
-
-/** Objetivos semanales de la AESAN, ajustados a los huecos que sí se planifican */
-export function objetivos(ind: Indicadores): Objetivo[] {
-  const s = ind.escala
-  const r = (n: number) => Math.round(n * s)
-  const minimo = (v: number, obj: number): Semaforo => (v >= obj ? 'verde' : v >= obj - 1 ? 'ambar' : 'rojo')
-  const rango = (v: number, a: number, b: number): Semaforo => (v >= a && v <= b ? 'verde' : v >= a - 1 && v <= b + 1 ? 'ambar' : 'rojo')
-  const maximo = (v: number, m: number): Semaforo => (v <= m ? 'verde' : v <= m + 1 ? 'ambar' : 'rojo')
-  const leg = r(4), pa = r(3), pb = Math.max(r(4), 1), ca = r(3), cb = Math.max(r(4), 1)
-  return [
-    { clave: 'legumbre', etiqueta: '🫘 Legumbre', valor: ind.legumbre, texto: `${ind.legumbre} de ≥${leg}`, estado: minimo(ind.legumbre, leg) },
-    {
-      clave: 'pescado', etiqueta: '🐟 Pescado', valor: ind.pescado, texto: `${ind.pescado} (${ind.pescadoAzul} azul) de ${pa}-${pb}`,
-      estado: rango(ind.pescado, pa, pb) === 'verde' && ind.pescadoAzul === 0 && s > 0.5 ? 'ambar' : rango(ind.pescado, pa, pb),
-    },
-    { clave: 'carne', etiqueta: '🍗 Carne', valor: ind.carne, texto: `${ind.carne} de ${ca}-${cb}`, estado: rango(ind.carne, ca, cb) },
-    { clave: 'roja', etiqueta: '🥩 Carne roja', valor: ind.carneRoja, texto: `${ind.carneRoja} de máx. 2`, estado: ind.carneRoja <= 1 ? 'verde' : ind.carneRoja === 2 ? 'ambar' : 'rojo' },
-    { clave: 'huevo', etiqueta: '🥚 Huevo', valor: ind.huevo, texto: `${ind.huevo} de máx. 4`, estado: maximo(ind.huevo, 4) },
-  ]
-}
 
 export function semaforoProteina(g: number, c: Comensal): Semaforo {
   if (g >= c.protMin && g <= c.protMax * 1.1) return 'verde'
@@ -223,62 +174,12 @@ export function semaforoProteina(g: number, c: Comensal): Semaforo {
 }
 
 // ---------------------------------------------------------
-// Raciones de cada grupo y acompañamientos
+// Guarniciones
 // ---------------------------------------------------------
 export const ordenDe = (e: Pick<EntradaPlan, 'orden'>) => e.orden ?? 0
 
-/** Raciones de cada grupo por ración de una receta (o lo que se supone si no tiene datos) */
-export function porcionesRacion(ctx: Pick<ContextoMenu, 'porciones'>, r: Receta, momento: Momento): Porciones {
-  return ctx.porciones?.get(r.id) ?? porcionesEstimadas(r, momento)
-}
-
-/** Lo que suele sumar un acompañamiento: una guarnición de verdura y otra de hidratos (la media de las del recetario) */
-export interface Acompanamiento {
-  porciones: Porciones
-  /** hay guarniciones en el recetario */
-  hay: boolean
-}
-
-export function acompanamiento(ctx: ContextoMenu): Acompanamiento {
-  const guarn = ctx.recetas.filter(esGuarnicion)
-  const media = (rs: Receta[]) => {
-    if (!rs.length) return null
-    let p = { ...PORCIONES_CERO }
-    for (const r of rs) p = sumarPorciones(p, porcionesRacion(ctx, r, 'comida'), 1 / rs.length)
-    return p
-  }
-  const v = media(guarn.filter((r) => tipoGuarnicion(ctx.porciones?.get(r.id)) === 'verdura'))
-  const h = media(guarn.filter((r) => tipoGuarnicion(ctx.porciones?.get(r.id)) !== 'verdura'))
-  let porciones = { ...PORCIONES_CERO }
-  for (const x of [v, h]) if (x) porciones = sumarPorciones(porciones, x)
-  // Sin guarniciones en el recetario: se supone el típico acompañamiento (verdura + hidratos)
-  if (!guarn.length) return { porciones: { ...PORCIONES_CERO, verdura: 1, hidratos: 1 }, hay: false }
-  return { porciones, hay: true }
-}
-
-const hayDesayuno = (delDia: Pick<EntradaPlan, 'momento' | 'recipe_id' | 'extras' | 'origen'>[]) =>
-  delDia.some((e) => e.momento === 'desayuno' && (e.recipe_id || e.extras?.length || e.origen === 'libre'))
-
-function porcionesDia(ctx: ContextoMenu, delDia: EntradaPlan[], c: Comensal): Porciones {
-  const recetas = new Map(ctx.recetas.map((r) => [r.id, r]))
-  const p = porcionesPersona(delDia, c.factor, ctx.porciones ?? new Map(), ctx.ingredientes ?? new Map(), factorHogarDe(ctx), recetas)
-  return hayDesayuno(delDia) ? p : sumarPorciones(p, porcionesEstimadas({}, 'desayuno'), c.factor)
-}
-
-/** Lo lejos que queda un día de las raciones recomendadas (verdura, hidratos, lácteos), de media entre los comensales */
-export function desajusteRacionesDia(ctx: ContextoMenu, delDia: EntradaPlan[]): number {
-  const cs = ctx.comensales.length ? ctx.comensales : [{ id: '_', nombre: '', factor: 1, protMin: 0, protMax: 0 }]
-  return cs.reduce((s, c) => s + desajustePorciones(porcionesDia(ctx, delDia, c)), 0) / cs.length
-}
-
-/** Puntuación de un día entero (lo que se minimiza al añadir guarniciones) */
-export function costeDia(ctx: ContextoMenu, delDia: EntradaPlan[]): number {
-  const libre = delDia.some((e) => e.origen === 'libre' && e.momento !== 'desayuno')
-  if (libre) return 0
-  return desajusteRacionesDia(ctx, delDia)
-}
-
-const factorHogarDe = (ctx: Pick<ContextoMenu, 'comensales'>) => ctx.comensales.reduce((s, c) => s + c.factor, 0) || 1
+/** ¿Hay guarniciones en el recetario? (si no, los principales se quedan solos) */
+const hayGuarniciones = (ctx: Pick<ContextoMenu, 'recetas'>) => ctx.recetas.some(esGuarnicion)
 
 // ---------------------------------------------------------
 // Puntuación (cuanto más baja, mejor)
@@ -293,24 +194,18 @@ interface Asignada extends Opcion {
 const PREMIO_SOBRAS = 0.9
 
 function penalizacion(asig: (Asignada | null)[], ctx: ContextoMenu, recetas: Map<string, Receta>, libres: Set<number>): number {
-  const ind: Indicadores = {
-    huecosPlanificados: 14 - libres.size, escala: (14 - libres.size) / 14, legumbre: 0, pescado: 0, pescadoAzul: 0, carne: 0, carneRoja: 0, huevo: 0, vegetal: 0, sinGrupo: 0,
-    proteinaDia: new Map(), sinProteina: 0,
-  }
-  const acomp = ctx.acomp ?? acompanamiento(ctx)
-  const porcDia: Porciones[] = [0, 1, 2, 3, 4, 5, 6].map(() => ({ ...PORCIONES_CERO }))
+  const escala = (14 - libres.size) / 14
+  const conteo = CONTEO_CERO()
+  const sinGuarniciones = !hayGuarniciones(ctx)
   let p = 0
   for (let i = 0; i < asig.length; i++) {
     const a = asig[i]
     if (!a) continue
     const r = recetas.get(a.recipe_id)!
-    contarGrupo(ind, r.grupo_proteico)
-    porcDia[a.dia] = sumarPorciones(porcDia[a.dia], porcionesRacion(ctx, r, a.momento))
-    // Un principal lleva guarniciones: cuenta lo que suelen sumar
-    if (papelDe(r) === 'principal') {
-      porcDia[a.dia] = sumarPorciones(porcDia[a.dia], acomp.porciones)
-      if (!acomp.hay) p += 0.3
-    }
+    const t = ctx.tipos?.get(r.id)
+    if (t) conteo[t]++
+    // Un principal sin guarniciones en el recetario queda cojo
+    if (sinGuarniciones && papelDe(r) === 'principal') p += 0.3
     // Sobras: tienen que ser de la cena de ayer
     if (a.origen === 'sobras') {
       const cena = asig[i - 1]
@@ -318,26 +213,8 @@ function penalizacion(asig: (Asignada | null)[], ctx: ContextoMenu, recetas: Map
       else if (sobrasEntreSemana(a)) p -= PREMIO_SOBRAS
     }
   }
-  const s = ind.escala
-  // Frecuencias AESAN
-  p += 3 * Math.max(0, 4 * s - ind.legumbre)
-  p += 3 * Math.max(0, 3 * s - ind.pescado) + 1 * Math.max(0, ind.pescado - 4 * s)
-  if (ind.pescadoAzul === 0 && s > 0.5) p += 2
-  p += 1 * Math.max(0, 3 * s - ind.carne) + 1.5 * Math.max(0, ind.carne - 4 * s)
-  p += 1.5 * Math.max(0, ind.carneRoja - 1) + 3 * Math.max(0, ind.carneRoja - 2)
-  p += 2.5 * Math.max(0, ind.huevo - 4 * s)
-  p += 0.5 * ind.sinGrupo
-  // Raciones de cada grupo de cada uno, cada día (solo días con todo planificado)
-  const cs = ctx.comensales.length ? ctx.comensales : null
-  for (let d = 0; d < 7; d++) {
-    const completo = asig[d * 2] && asig[d * 2 + 1]
-    if (!completo || libres.has(d * 2) || libres.has(d * 2 + 1)) continue
-    if (cs) {
-      let porc = 0
-      for (const c of cs) porc += desajustePorciones(sumarPorciones(ctx.basePorciones?.get(c.id)?.[d] ?? porcionesEstimadas({}, 'desayuno'), porcDia[d], c.factor))
-      p += porc / cs.length
-    } else p += desajustePorciones(sumarPorciones(porcionesEstimadas({}, 'desayuno'), porcDia[d]))
-  }
+  // Veces por semana de cada tipo (Ajustes)
+  p += desajusteFrecuencias(conteo, frecuenciasCtx(ctx), escala)
   // Variedad, preferencias, congelador y bases reutilizadas
   const usos = new Map<string, number>()
   const usosBase = new Map<string, number>()
@@ -351,10 +228,10 @@ function penalizacion(asig: (Asignada | null)[], ctx: ContextoMenu, recetas: Map
       usos.set(a.recipe_id, n)
       if (n > 1) p += 1.6 * (n - 1)
     }
-    // mismo grupo en comida y cena del mismo día
+    // mismo tipo en comida y cena del mismo día
     if (i % 2 === 1 && asig[i - 1]) {
-      const otro = recetas.get(asig[i - 1]!.recipe_id)!
-      if (r.grupo_proteico && r.grupo_proteico === otro.grupo_proteico) p += 0.8
+      const t = ctx.tipos?.get(r.id)
+      if (t && t === ctx.tipos?.get(asig[i - 1]!.recipe_id)) p += 0.8
     }
     p -= 0.35 * ((r.valoracion ?? 3) - 3) + (r.favorita ? 0.4 : 0)
     if (a.origen === 'congelador') {
@@ -387,7 +264,6 @@ type OpcionesGenerar = { rnd?: () => number; intentos?: number; soloHueco?: { fe
  */
 export function generarMenu(ctx: ContextoMenu, actuales: EntradaPlan[], opciones: OpcionesGenerar = {}): ResultadoMenu {
   const rnd = opciones.rnd ?? Math.random
-  if (!ctx.acomp) ctx = { ...ctx, acomp: acompanamiento(ctx) }
   const principales = actuales.filter((e) => ordenDe(e) === 0)
   const anadidas = actuales.filter((e) => ordenDe(e) > 0)
   const fijadas = opciones.soloHueco ? anadidas : anadidas.filter((e) => e.fijado)
@@ -396,11 +272,7 @@ export function generarMenu(ctx: ContextoMenu, actuales: EntradaPlan[], opciones
   const solo = opciones.soloHueco
   const desayunos = solo && solo.momento !== 'desayuno' ? desActuales : generarDesayunos(ctx, desActuales, rnd, solo?.fecha)
   if (solo?.momento === 'desayuno') return { entradas: [...desayunos, ...resto, ...fijadas], avisos: [] }
-  // Lo que ya se come cada día (desayuno, sueltos y recetas añadidas que se mantienen), para equilibrar el resto
-  const fechas = fechasSemana(ctx.lunes)
-  const conocido = [...desayunos, ...fijadas, ...resto.map((e) => ({ ...e, recipe_id: null, origen: 'fresco' as Origen }))]
-  const basePorciones = new Map(ctx.comensales.map((c) => [c.id, fechas.map((f) => porcionesDia(ctx, conocido.filter((e) => e.fecha === f), c))]))
-  const r = generarComidasCenas({ ...ctx, basePorciones }, resto, opciones)
+  const r = generarComidasCenas(ctx, resto, opciones)
   const base = [...desayunos, ...r.entradas, ...fijadas]
   if (solo) {
     // Si el nuevo plato es un principal, se le ponen guarniciones (las que había en ese hueco se cambian)
@@ -424,14 +296,13 @@ const nuevaAnadida = (ctx: ContextoMenu, fecha: string, momento: Momento, orden:
   fecha, momento, orden, recipe_id: o.recipe_id, raciones: ctx.raciones, origen: o.origen, freezer_item_id: null, fijado: false, nota: null, extras: [], cocinar_extra: 0, extra_congelado: false,
 })
 
-/** Lo que cuesta añadir una guarnición a un principal (mejor 1-2) y a un plato completo o desayuno (solo si hace falta) */
+/** Lo que cuesta cada guarnición: con una basta, pero verdura + hidratos (pollo + arroz + ensalada) sale mejor */
 const COSTE_GUARNICION = 0.15
-const COSTE_ANADIR_COMPLETO = 0.9
+const PREMIO_MEZCLA = 0.3
 
 /**
- * Pone 1 o 2 guarniciones a cada principal (pollo + arroz + verduras), eligiendo las que mejor dejan el día
- * (raciones de verdura, hidratos y lácteos). A un plato completo o a un desayuno solo se le añade algo
- * si el día lo necesita de verdad (por ejemplo, una ensalada con unas lentejas).
+ * Pone 1 o 2 guarniciones a cada principal (pollo + arroz + verduras): mejor una de verdura y otra de hidratos,
+ * con variedad en la semana. A los platos completos y a los desayunos no se les añade nada.
  */
 function complementar(ctx: ContextoMenu, entradas: EntradaPlan[], rnd: () => number, solo?: { fecha: string; momento: Momento }): EntradaPlan[] {
   const usos = new Map<string, number>()
@@ -463,28 +334,23 @@ function complementar(ctx: ContextoMenu, entradas: EntradaPlan[], rnd: () => num
         }
         if (guarnAyer.length || !esPrin) continue
       }
+      if (!esPrin) continue
       const cands = candidatasAnadir(ctx, dia, fecha, momento, delDia)
       if (!cands.length) continue
-      const base = costeDia(ctx, delDia)
-      const coste = esPrin ? COSTE_GUARNICION : COSTE_ANADIR_COMPLETO
-      // Un principal sin guarniciones queda cojo: se pone al menos una
+      const tipoDe = (id: string) => tipoGuarnicion(ctx.repartos?.get(id))
       let mejor: EntradaPlan[] = []
-      let mejorP = esPrin ? Infinity : base
-      const solas = cands.map((o) => {
-        const e = nuevaAnadida(ctx, fecha, momento, orden, o)
-        return { e, p: costeDia(ctx, [...delDia, e]) + variedad(o.recipe_id) + coste + 0.15 * rnd() }
-      })
+      let mejorP = Infinity
+      const solas = cands.map((o) => ({ e: nuevaAnadida(ctx, fecha, momento, orden, o), p: variedad(o.recipe_id) + COSTE_GUARNICION + 0.15 * rnd() }))
       for (const x of solas) if (x.p < mejorP) [mejorP, mejor] = [x.p, [x.e]]
-      // Dos guarniciones (entre las que mejor van solas): lo normal con un principal es verdura + hidratos
-      const top = [...solas].sort((a, b) => a.p - b.p).slice(0, 10)
-      for (let i = 0; i < top.length; i++)
-        for (let j = i + 1; j < top.length; j++) {
-          const a = top[i].e
-          const b = { ...top[j].e, orden: orden + 1 }
+      // Dos guarniciones: lo normal con un principal es verdura + hidratos
+      for (let i = 0; i < solas.length; i++)
+        for (let j = i + 1; j < solas.length; j++) {
+          const a = solas[i].e
+          const b = { ...solas[j].e, orden: orden + 1 }
           if (a.recipe_id === b.recipe_id) continue
-          const tipos = new Set([a, b].map((x) => tipoGuarnicion(ctx.porciones?.get(x.recipe_id!))))
-          const mezcla = tipos.has('verdura') && tipos.has('hidratos') ? -0.1 : 0.2
-          const p = costeDia(ctx, [...delDia, a, b]) + variedad(a.recipe_id!) + variedad(b.recipe_id!) + 2 * coste + mezcla + 0.15 * rnd()
+          const tipos = new Set([tipoDe(a.recipe_id!), tipoDe(b.recipe_id!)])
+          if (!(tipos.has('verdura') && tipos.has('hidratos'))) continue
+          const p = solas[i].p + solas[j].p - PREMIO_MEZCLA
           if (p < mejorP) [mejorP, mejor] = [p, [a, b]]
         }
       for (const e of mejor) {
@@ -506,14 +372,14 @@ export function otraAnadida(ctx: ContextoMenu, entradas: EntradaPlan[], e: Entra
   const usos = new Map<string, number>()
   for (const x of entradas) if (x.recipe_id) usos.set(x.recipe_id, (usos.get(x.recipe_id) ?? 0) + 1)
   // misma clase de guarnición si se puede (cambiar arroz por quinoa, no por ensalada)
-  const tipo = e.recipe_id ? tipoGuarnicion(ctx.porciones?.get(e.recipe_id)) : 'otra'
+  const tipo = e.recipe_id ? tipoGuarnicion(ctx.repartos?.get(e.recipe_id)) : 'otra'
   let mejor: EntradaPlan | null = null
   let mejorP = Infinity
   for (const o of candidatasAnadir(ctx, dia, e.fecha, e.momento, delDia)) {
     if (o.recipe_id === e.recipe_id) continue
     const cand = { ...e, recipe_id: o.recipe_id, origen: o.origen, freezer_item_id: null, fijado: false }
-    const otroTipo = tipo !== 'otra' && tipoGuarnicion(ctx.porciones?.get(o.recipe_id)) !== tipo ? 1 : 0
-    const p = costeDia(ctx, [...delDia, cand]) + otroTipo + 0.4 * (usos.get(o.recipe_id) ?? 0) + 0.8 * rnd()
+    const otroTipo = tipo !== 'otra' && tipoGuarnicion(ctx.repartos?.get(o.recipe_id)) !== tipo ? 1 : 0
+    const p = otroTipo + 0.4 * (usos.get(o.recipe_id) ?? 0) + 0.8 * rnd()
     if (p < mejorP) {
       mejorP = p
       mejor = cand
@@ -579,9 +445,6 @@ function generarDesayunos(ctx: ContextoMenu, actuales: EntradaPlan[], rnd: () =>
     for (const o of opcionesHueco({ dia, fecha, momento: 'desayuno' }, ctx, disp)) {
       const r = recetas.get(o.recipe_id)!
       let p = 0.5 * (usos.get(o.recipe_id) ?? 0) - 0.35 * ((r.valoracion ?? 3) - 3) - (r.favorita ? 0.4 : 0) + rnd() * 1.2
-      // un poco mejor si lleva fruta o algo de verdura
-      const porc = ctx.porciones?.get(r.id)
-      if (porc) p -= 0.3 * Math.min(1, porc.fruta + porc.verdura)
       if (o.origen === 'congelador') p -= 1.5
       if (soloFecha && e?.recipe_id === o.recipe_id) p += 3 // «otro desayuno»: mejor uno distinto
       if (p < mejorP) {
@@ -748,7 +611,13 @@ function elegir(
 // ---------------------------------------------------------
 // Avisos: qué falta en el recetario para cumplir las reglas
 // ---------------------------------------------------------
-export function avisosRecetario(recetas: Receta[], porciones?: Map<string, Porciones | null>): string[] {
+/** Lo que hace falta para los avisos de tipos y guarniciones (si falta, esos avisos no salen) */
+export type InfoAvisos = Pick<ContextoMenu, 'repartos' | 'tipos' | 'frecuencias'>
+
+const nombreTipo = (t: TipoAlimento) => INFO_TIPOS[t].etiqueta.toLowerCase()
+const veces = (n: number) => `${n} ${n === 1 ? 'vez' : 'veces'}`
+
+export function avisosRecetario(recetas: Receta[], info: InfoAvisos = {}): string[] {
   const platos = recetas.filter((r) => esPlato(r) && papelDe(r) !== 'guarnicion')
   const av: string[] = []
   if (!recetas.some(esDesayuno)) av.push('No hay recetas de desayuno (tipo «Desayuno»): los desayunos se quedan vacíos. Puedes crear las vuestras o añadir alimentos sueltos a cada desayuno.')
@@ -763,26 +632,31 @@ export function avisosRecetario(recetas: Receta[], porciones?: Map<string, Porci
   const comidas = platos.filter((r) => sirvePara(r, 'comida'))
   const cenas = platos.filter((r) => sirvePara(r, 'cena'))
   const batchLunes = comidas.filter((r) => sirveDeBatch(r, 1))
-  const n = (g: GrupoProteico[]) => platos.filter((r) => r.grupo_proteico && g.includes(r.grupo_proteico)).length
   if (comidas.length < 2) av.push(`Solo hay ${comidas.length} receta${comidas.length === 1 ? '' : 's'} para comida: hacen falta al menos 2 distintas para no repetir y más para tener variedad.`)
   if (cenas.length < 2) av.push(`Solo hay ${cenas.length} receta${cenas.length === 1 ? '' : 's'} para cena.`)
   if (batchLunes.length === 0 && comidas.length > 0)
     av.push('Ninguna comida aguanta hasta el martes en nevera ni es congelable: marca en las recetas los días de nevera o «congelable» para poder cocinarlas el domingo.')
-  if (n(['legumbre']) === 0) av.push('No hay recetas de legumbre (la AESAN recomienda 4 raciones a la semana).')
-  else if (n(['legumbre']) < 2) av.push('Solo hay 1 receta de legumbre: se repetirá para llegar a las 4 raciones semanales.')
-  if (n(['pescado_blanco', 'pescado_azul']) === 0) av.push('No hay recetas de pescado (recomendado 3-4 raciones a la semana).')
-  else if (n(['pescado_azul']) === 0) av.push('No hay recetas de pescado azul (salmón, sardinas, caballa, atún…): al menos 1 a la semana.')
-  if (n(['carne_blanca']) === 0 && n(['carne_roja']) > 0) av.push('No hay recetas de carne blanca (pollo, pavo, conejo): la AESAN recomienda priorizarlas sobre la roja.')
-  const sinGrupo = platos.filter((r) => !r.grupo_proteico)
-  if (sinGrupo.length)
-    av.push(`${sinGrupo.length} receta${sinGrupo.length === 1 ? '' : 's'} sin proteína principal (${sinGrupo.slice(0, 3).map((r) => r.titulo).join(', ')}${sinGrupo.length > 3 ? '…' : ''}): no cuentan para las frecuencias. Edítalas y elige el grupo.`)
+  // Tipos de alimento: lo que pedís en Ajustes y las recetas que hay de cada uno
+  if (info.tipos) {
+    const f = frecuenciasCtx(info)
+    for (const t of TIPOS_ALIMENTO) {
+      const v = f[t]
+      if (!v) continue
+      const hay = platos.filter((r) => info.tipos!.get(r.id) === t).length
+      if (hay === 0) av.push(`Queréis comer ${nombreTipo(t)} ${veces(v)} a la semana, pero no hay ninguna receta de comida o cena con ${nombreTipo(t)} (${INFO_TIPOS[t].ejemplos}). Añade alguna o cambia las veces en Ajustes.`)
+      else if (hay === 1 && v >= 3) av.push(`Solo hay 1 receta de ${nombreTipo(t)}: se repetirá para llegar a ${veces(v)} a la semana.`)
+    }
+    const sinDatos = platos.filter((r) => !conDatos(r))
+    if (sinDatos.length)
+      av.push(`${sinDatos.length} receta${sinDatos.length === 1 ? '' : 's'} sin ingredientes del catálogo (${sinDatos.slice(0, 3).map((r) => r.titulo).join(', ')}${sinDatos.length > 3 ? '…' : ''}): no se sabe qué llevan, así que no cuentan para las veces por semana ni para los porcentajes del día. Edítalas y vincula los ingredientes.`)
+  }
   // Principales y guarniciones
   const principales = platos.filter((r) => papelDe(r) === 'principal')
   const guarn = recetas.filter(esGuarnicion)
   if (principales.length && !guarn.length)
     av.push(`Hay ${principales.length} receta${principales.length === 1 ? '' : 's'} «principal» (para acompañar) pero ninguna guarnición. Crea guarniciones sencillas (arroz, patatas, quinoa, ensalada, verduras asadas) y márcalas como «Guarnición».`)
-  else if (principales.length && porciones) {
-    const tipos = new Set(guarn.map((r) => tipoGuarnicion(porciones.get(r.id))))
+  else if (principales.length && info.repartos) {
+    const tipos = new Set(guarn.map((r) => tipoGuarnicion(info.repartos!.get(r.id))))
     if (!tipos.has('verdura')) av.push('No hay guarniciones de verdura (ensalada, verduras asadas, salteado…): los principales irán solo con hidratos.')
     if (!tipos.has('hidratos')) av.push('No hay guarniciones de hidratos (arroz, patatas, quinoa, pan…): los principales irán solo con verdura.')
   }
@@ -800,17 +674,16 @@ export function avisosMenu(entradas: EntradaPlan[], ctx: ContextoMenu): string[]
     av.push(`${d}, ${e.momento}: sin plato (${motivo}).`)
   }
   const ind = indicadores(entradas, ctx)
-  const obj = objetivos(ind)
-  const recetas = ctx.recetas.filter(esPlato)
-  const hay = (g: GrupoProteico[]) => recetas.some((r) => r.grupo_proteico && g.includes(r.grupo_proteico))
-  for (const o of obj) {
+  const platos = ctx.recetas.filter(esPlato)
+  for (const o of evaluarFrecuencias(ind.conteo, frecuenciasCtx(ctx), ind.escala)) {
     if (o.estado === 'verde') continue
-    if (o.clave === 'legumbre' && !hay(['legumbre'])) continue // ya avisado en el recetario
-    if (o.clave === 'pescado' && !hay(['pescado_blanco', 'pescado_azul'])) continue
-    if (o.clave === 'legumbre') av.push(`Legumbre: ${o.texto} raciones. Faltan recetas de legumbre que encajen (más variedad).`)
-    if (o.clave === 'pescado') av.push(`Pescado: ${o.texto}. Añade más recetas de pescado${ind.pescadoAzul === 0 ? ', sobre todo azul' : ''}.`)
-    if (o.clave === 'roja') av.push(`Carne roja: ${ind.carneRoja} raciones (máx. 1-2). Faltan alternativas de otros grupos.`)
-    if (o.clave === 'huevo') av.push(`Huevo: ${ind.huevo} raciones (máx. 4).`)
+    if (o.valor < o.objetivo && !platos.some((r) => ctx.tipos?.get(r.id) === o.tipo)) continue // ya avisado en el recetario
+    const nombre = INFO_TIPOS[o.tipo].etiqueta
+    av.push(
+      o.valor < o.objetivo
+        ? `${nombre}: ${veces(o.valor)} de ${o.objetivo}. Faltan recetas de ${nombreTipo(o.tipo)} que encajen (más variedad).`
+        : `${nombre}: ${veces(o.valor)} (queríais ${o.objetivo}). Faltan alternativas de otros tipos.`,
+    )
   }
   return av
 }

@@ -1,19 +1,20 @@
-// Método del plato (estilo Harvard): la mitad del plato verdura y fruta, un cuarto proteína,
-// un cuarto hidratos y un poco de grasa saludable. Se mide por PESO del plato ya cocinado, no por kcal.
+// Reparto de lo que se come entre verdura (y fruta), proteína, hidratos y grasa, calculado desde los ingredientes.
+// Se mide por PESO en el plato ya cocinado (no por kcal: la verdura casi no tiene kcal y saldría siempre cerca del 0 %).
+// Es solo información: no hay porcentajes objetivo.
 import { normalizar } from '../../shared/parser.js'
 import { gramosDe, racionesDeBase } from './nutricion'
-import type { EntradaPlan, GrupoPlato, Ingrediente, Momento, Receta } from './tipos'
+import type { EntradaPlan, GrupoPlato, Ingrediente, Receta } from './tipos'
 
 export type { GrupoPlato }
-/** Los grupos que forman el plato (lo de «otro» no cuenta: especias, caldos, bebidas, salsas…) */
+/** Los grupos que cuentan para el porcentaje (lo de «otro» no cuenta: especias, caldos, bebidas, salsas…) */
 export const GRUPOS_CUENTAN = ['verdura', 'proteina', 'hidratos', 'grasa'] as const
 export type GrupoCuenta = (typeof GRUPOS_CUENTAN)[number]
 
 export const GRUPOS_PLATO: { valor: GrupoPlato; etiqueta: string; corta: string; emoji: string }[] = [
-  { valor: 'verdura', etiqueta: 'Verdura y fruta', corta: 'Verdura', emoji: '🥦' },
-  { valor: 'proteina', etiqueta: 'Proteína', corta: 'Proteína', emoji: '🍗' },
+  { valor: 'verdura', etiqueta: 'Verdura y fruta', corta: 'Verduras', emoji: '🥦' },
+  { valor: 'proteina', etiqueta: 'Proteínas', corta: 'Proteínas', emoji: '🍗' },
   { valor: 'hidratos', etiqueta: 'Hidratos', corta: 'Hidratos', emoji: '🍞' },
-  { valor: 'grasa', etiqueta: 'Grasa saludable', corta: 'Grasa', emoji: '🫒' },
+  { valor: 'grasa', etiqueta: 'Grasas', corta: 'Grasas', emoji: '🫒' },
   { valor: 'otro', etiqueta: 'No cuenta (especias, caldos, bebidas, salsas…)', corta: 'No cuenta', emoji: '🧂' },
 ]
 export const etiquetaGrupoPlato = (g: GrupoPlato) => GRUPOS_PLATO.find((x) => x.valor === g)!
@@ -111,7 +112,7 @@ export function factorCocinado(ing: Pick<Ingrediente, 'nombre' | 'categoria'>): 
 // ---------------------------------------------------------
 // Reparto de una receta (por ración)
 // ---------------------------------------------------------
-export interface PlatoReceta {
+export interface RepartoReceta {
   /** gramos por ración en el plato (ya cocinado) de cada grupo */
   reparto: Reparto
   /** líneas que no se han podido pesar */
@@ -121,13 +122,13 @@ export interface PlatoReceta {
 }
 
 /** Reparto por ración. Las preparaciones base cuentan en proporción a lo que se usa de ellas. */
-export function platoPorRacion(
+export function repartoPorRacion(
   receta: Receta,
   ingredientes: Map<string, Ingrediente>,
   recetas: Map<string, Receta>,
   visitadas: Set<string> = new Set(),
-): PlatoReceta {
-  const res: PlatoReceta = { reparto: { ...REPARTO_CERO }, sinContar: [], detalle: [] }
+): RepartoReceta {
+  const res: RepartoReceta = { reparto: { ...REPARTO_CERO }, sinContar: [], detalle: [] }
   if (visitadas.has(receta.id)) return res
   visitadas.add(receta.id)
   const r = receta.raciones || 1
@@ -139,7 +140,7 @@ export function platoPorRacion(
         res.sinContar.push(l.texto_original || sub?.titulo || 'preparación base')
         continue
       }
-      const p = platoPorRacion(sub, ingredientes, recetas, new Set(visitadas))
+      const p = repartoPorRacion(sub, ingredientes, recetas, new Set(visitadas))
       res.reparto = sumarReparto(res.reparto, p.reparto, rac / r)
       for (const d of p.detalle) res.detalle.push({ ...d, nombre: `${d.nombre} (de ${sub.titulo})`, g: (d.g * rac) / r })
       res.sinContar.push(...p.sinContar)
@@ -164,90 +165,64 @@ export function platoPorRacion(
 }
 
 // ---------------------------------------------------------
-// ¿Cumple el método?
+// Porcentajes (por peso en el plato)
 // ---------------------------------------------------------
 export type Porcentajes = Record<GrupoCuenta, number>
 
-/** % de cada grupo sobre lo que cuenta del plato (verdura + proteína + hidratos + grasa) */
-export function porcentajes(r: Reparto): Porcentajes | null {
+/** % de cada grupo sobre lo que cuenta (verdura + proteína + hidratos + grasa). null si casi no hay datos. */
+export function porcentajes(r: Reparto | null | undefined): Porcentajes | null {
+  if (!r) return null
   const t = pesoPlato(r)
   if (t < 30) return null
   return { verdura: (100 * r.verdura) / t, proteina: (100 * r.proteina) / t, hidratos: (100 * r.hidratos) / t, grasa: (100 * r.grasa) / t }
 }
 
-/** Rangos admitidos (en % del peso). El objetivo es 50 / 25 / 25 + un poco de grasa. */
-export const RANGOS_PLATO: Record<'principal' | 'desayuno', Record<GrupoCuenta, [number, number]>> = {
-  principal: { verdura: [40, 65], proteina: [15, 35], hidratos: [15, 35], grasa: [0, 12] },
-  // Desayuno más flexible: con una pieza de fruta, algo de proteína (yogur, huevo, queso…) e hidratos vale
-  desayuno: { verdura: [15, 65], proteina: [10, 40], hidratos: [20, 60], grasa: [0, 20] },
-}
-export const OBJETIVO_PLATO: Porcentajes = { verdura: 50, proteina: 25, hidratos: 25, grasa: 0 }
-
-export type EstadoPlato = 'cumple' | 'casi' | 'no' | 'sin_datos'
-export interface EvaluacionPlato {
-  estado: EstadoPlato
-  porcentajes: Porcentajes | null
-  /** suma de lo que se sale de los rangos (0 = cumple; 0,1 = 10 puntos) */
-  desviacion: number
-  /** «Falta verdura», «Sobran hidratos»… */
-  consejos: string[]
-}
-
-export const tipoRangos = (m: Momento | 'receta', r?: Pick<Receta, 'tipo_comida'>) => (m === 'desayuno' || (m === 'receta' && r?.tipo_comida === 'desayuno') ? 'desayuno' : 'principal')
-
-export function evaluarPlato(r: Reparto | null, tipo: 'principal' | 'desayuno' = 'principal'): EvaluacionPlato {
-  const pc = r ? porcentajes(r) : null
-  if (!pc) return { estado: 'sin_datos', porcentajes: null, desviacion: 0, consejos: [] }
-  const rangos = RANGOS_PLATO[tipo]
-  let desv = 0
-  const consejos: string[] = []
-  for (const g of GRUPOS_CUENTAN) {
-    const [a, b] = rangos[g]
-    const v = pc[g]
-    const nombre = etiquetaGrupoPlato(g).corta.toLowerCase()
-    if (v < a) {
-      desv += (a - v) / 100
-      consejos.push(`Falta ${nombre}`)
-    } else if (v > b) {
-      desv += (v - b) / 100
-      consejos.push(`${g === 'hidratos' ? 'Sobran' : 'Sobra'} ${nombre}`)
-    }
-  }
-  return { estado: desv === 0 ? 'cumple' : desv <= 0.1 ? 'casi' : 'no', porcentajes: pc, desviacion: desv, consejos }
-}
-
-export const TEXTO_ESTADO: Record<EstadoPlato, string> = {
-  cumple: 'Cumple el método del plato',
-  casi: 'Casi cumple el método del plato',
-  no: 'No cumple el método del plato',
-  sin_datos: 'Sin datos para el método del plato',
+/** Tipo de guarnición según lo que más pesa: verdura (ensalada, verduras asadas) o hidratos (arroz, patatas) */
+export type TipoGuarnicion = 'verdura' | 'hidratos' | 'otra'
+export function tipoGuarnicion(r: Reparto | null | undefined): TipoGuarnicion {
+  if (!r || (r.verdura < 20 && r.hidratos < 20)) return 'otra'
+  return r.verdura >= r.hidratos ? 'verdura' : 'hidratos'
 }
 
 // ---------------------------------------------------------
-// Un desayuno, comida o cena entero (varias recetas + alimentos sueltos)
+// Un día entero (desayuno, comida y cena: todas sus recetas y alimentos sueltos)
 // ---------------------------------------------------------
 const gramosSuelto = (ing: Ingrediente, cantidad: number) => (ing.unidad_base === 'ud' ? (ing.peso_unidad_g ? cantidad * ing.peso_unidad_g : null) : cantidad)
 
+export interface RepartoDia {
+  /** gramos por persona (una ración) de cada grupo; null si no hay nada con datos */
+  reparto: Reparto | null
+  /** recetas del día de las que no se sabe el reparto (sin ingredientes vinculados) */
+  sinDatos: number
+  /** hay algún hueco «fuera de casa» (no se sabe lo que se come) */
+  fuera: boolean
+}
+
 /**
- * Reparto por persona (una ración) de todo lo que hay en un hueco. Los alimentos sueltos son para todo el hogar:
- * se dividen entre las raciones del hogar. null si ninguna receta del hueco tiene datos.
+ * Lo que come una persona (una ración) en unas entradas del menú. Los alimentos sueltos son para todo el hogar:
+ * se dividen entre las raciones del hogar. Los porcentajes son los mismos para todos (el factor de ración escala todo igual).
  */
-export function repartoHueco(
+export function repartoEntradas(
   entradas: Pick<EntradaPlan, 'recipe_id' | 'origen' | 'extras'>[],
-  platos: Map<string, Reparto | null>,
+  repartos: Map<string, Reparto | null>,
   ingredientes: Map<string, Ingrediente>,
   factorHogar: number,
-): Reparto | null {
+): RepartoDia {
   let r: Reparto = { ...REPARTO_CERO }
   let algo = false
+  let sinDatos = 0
+  let fuera = false
   for (const e of entradas) {
-    if (e.origen === 'libre') return null
+    if (e.origen === 'libre') {
+      fuera = true
+      continue
+    }
     if (e.recipe_id) {
-      const p = platos.get(e.recipe_id)
+      const p = repartos.get(e.recipe_id)
       if (p) {
         r = sumarReparto(r, p)
         algo = true
-      }
+      } else sinDatos++
     }
     for (const s of e.extras ?? []) {
       const ing = ingredientes.get(s.ingredient_id)
@@ -258,5 +233,8 @@ export function repartoHueco(
       algo = true
     }
   }
-  return algo ? r : null
+  return { reparto: algo ? r : null, sinDatos, fuera }
 }
+
+/** ¿La receta tiene ingredientes vinculados al catálogo? (si no, no se sabe lo que lleva) */
+export const conDatos = (r: Receta) => r.ingredientes.some((l) => l.ingredient_id || l.sub_recipe_id)

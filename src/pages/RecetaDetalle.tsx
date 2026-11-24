@@ -3,11 +3,10 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useDatos } from '../lib/datos'
 import { fmt, nutricionPorRacion, pesoReceta } from '../lib/nutricion'
 import { useMenu } from '../lib/menu'
-import TartaPlato, { ChipPlato } from '../components/TartaPlato'
-import { GRUPOS_PLATO, grupoInferido, platoPorRacion, tipoRangos, type GrupoPlato } from '../lib/plato'
-import { PAPELES, etiquetaGrupo, etiquetaTipo, papelDe, tiempoTotal } from '../lib/tipos'
-import { porcionesPorRacion } from '../lib/grupos'
-import { ChipsRaciones } from '../components/Raciones'
+import { BarraReparto, ChipTipo } from '../components/Reparto'
+import { GRUPOS_PLATO, grupoInferido, repartoPorRacion, type GrupoPlato } from '../lib/reparto'
+import { INFO_TIPOS, tipoReceta } from '../lib/frecuencias'
+import { PAPELES, etiquetaTipo, papelDe, tiempoTotal } from '../lib/tipos'
 
 const FUENTES: Record<string, string> = { web: 'Web', instagram: 'Instagram', tiktok: 'TikTok', texto: 'Texto pegado', manual: 'Manual' }
 
@@ -39,11 +38,9 @@ export default function RecetaDetalle() {
   const rac = raciones ?? receta.raciones
   const factor = rac / receta.raciones
   const n = nutricionPorRacion(receta, mapaIngredientes, mapaRecetas)
-  const plato = platoPorRacion(receta, mapaIngredientes, mapaRecetas)
-  const porciones = porcionesPorRacion(receta, mapaIngredientes, mapaRecetas).porciones
+  const plato = repartoPorRacion(receta, mapaIngredientes, mapaRecetas)
+  const tipo = tipoReceta(receta, mapaIngredientes, mapaRecetas)
   const conPapel = !receta.es_base && receta.tipo_comida !== 'desayuno'
-  const tipoPlato = tipoRangos('receta', receta)
-  const g = etiquetaGrupo(receta.grupo_proteico)
   const t = tiempoTotal(receta)
   const pesoBase = pesoReceta(receta, mapaIngredientes, mapaRecetas)
   const usadaEn = recetas.filter((r) => r.ingredientes.some((l) => l.sub_recipe_id === receta.id))
@@ -69,10 +66,8 @@ export default function RecetaDetalle() {
       <div className="chips">
         {receta.es_base && <span className="chip base">Preparación base</span>}
         <span className="chip">{etiquetaTipo(receta.tipo_comida)}</span>
-        {g && <span className={`chip g-${g.valor}`}>{g.emoji} {g.etiqueta}</span>}
+        <ChipTipo tipo={tipo} />
         {conPapel && <span className="chip">{PAPELES.find((p) => p.valor === papelDe(receta))!.emoji} {PAPELES.find((p) => p.valor === papelDe(receta))!.etiqueta}</span>}
-        <ChipsRaciones p={porciones} />
-        {!receta.es_base && (!conPapel || papelDe(receta) === 'completo') && <ChipPlato reparto={plato.reparto} tipo={tipoPlato} />}
         {receta.congelable && <span className="chip">❄️ Congelable</span>}
         {receta.dias_nevera != null && <span className="chip">🧊 {receta.dias_nevera} días en nevera</span>}
         {receta.etiquetas.map((e) => (
@@ -153,59 +148,57 @@ export default function RecetaDetalle() {
       )}
       {n.manual && <p className="suave">Proteína introducida a mano.</p>}
 
-      {conPapel && papelDe(receta) !== 'completo' ? (
-        <p className="suave">
-          {papelDe(receta) === 'principal' ? '🍗 Es un principal: en el menú se acompaña de guarniciones' : '🥗 Es una guarnición: en el menú acompaña a un principal'}, y el equilibrio se mira en el día entero (raciones de verdura, hidratos y lácteos).
+      {conPapel && papelDe(receta) !== 'completo' && (
+        <p className="suave">{papelDe(receta) === 'principal' ? '🍗 Es un principal: en el menú se acompaña de guarniciones.' : '🥗 Es una guarnición: en el menú acompaña a un principal.'}</p>
+      )}
+      <section className="tarjeta">
+        <h3>Verduras, proteínas, hidratos y grasas{receta.es_base ? ' (de esta base; en cada plato cuenta lo que se use)' : ''}</h3>
+        {plato.detalle.length ? (
+          <BarraReparto reparto={plato.reparto} gramos />
+        ) : (
+          <p className="suave">Sin datos: vincula los ingredientes con el catálogo y pon sus cantidades.</p>
+        )}
+        <p className="suave pequeno">
+          {tipo ? `En las veces por semana cuenta como ${INFO_TIPOS[tipo].etiqueta.toLowerCase()} (es lo que más pesa).` : 'No cuenta en las veces por semana (no lleva legumbre, pescado, carne, huevo ni tofu en cantidad).'} Se calcula solo con los ingredientes.
         </p>
-      ) : null}
-      <section className="tarjeta" hidden={conPapel && papelDe(receta) !== 'completo'}>
-        <TartaPlato
-          reparto={plato.reparto}
-          tipo={tipoPlato}
-          titulo={receta.es_base ? 'Método del plato (de esta base; en cada plato cuenta lo que se use)' : 'Método del plato'}
-          pie={
-            <>
-              {plato.sinContar.length > 0 && <p className="aviso pequeno">No se han podido pesar: {[...new Set(plato.sinContar)].join(', ')}.</p>}
-              {plato.detalle.length > 0 && (
-                <details className="origen-plato">
-                  <summary>De dónde sale cada grupo (y cambiarlo)</summary>
-                  <table>
-                    <tbody>
-                      {[...plato.detalle].sort((a, b) => b.g - a.g).map((d, i) => {
-                        const ing = d.ingredient_id ? mapaIngredientes.get(d.ingredient_id) : undefined
-                        return (
-                          <tr key={i}>
-                            <td>{d.nombre}</td>
-                            <td className="derecha">{fmt(d.g)} g</td>
-                            <td className="derecha">
-                              {ing ? (
-                                <select
-                                  value={ing.grupo_plato ?? ''}
-                                  onChange={(e) => {
-                                    setErrorGrupo(null)
-                                    guardarGrupoPlato(ing.id, (e.target.value || null) as GrupoPlato | null).catch((x) => setErrorGrupo(x.message))
-                                  }}
-                                  aria-label={`Grupo de ${ing.nombre}`}
-                                >
-                                  <option value="">Auto: {GRUPOS_PLATO.find((x) => x.valor === grupoInferido(ing))!.corta}</option>
-                                  {GRUPOS_PLATO.map((x) => (
-                                    <option key={x.valor} value={x.valor}>{x.emoji} {x.corta}</option>
-                                  ))}
-                                </select>
-                              ) : null}
-                            </td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
-                  <p className="suave pequeno">El cambio vale para todas las recetas que llevan ese ingrediente. Arroz, pasta y legumbres secas cuentan ya cocidos (pesan unas 2,5 veces más).</p>
-                  {errorGrupo && <p className="error">{errorGrupo}</p>}
-                </details>
-              )}
-            </>
-          }
-        />
+        {plato.sinContar.length > 0 && <p className="aviso pequeno">No se han podido pesar: {[...new Set(plato.sinContar)].join(', ')}.</p>}
+        {plato.detalle.length > 0 && (
+          <details className="origen-plato">
+            <summary>De dónde sale cada grupo (y cambiarlo)</summary>
+            <table>
+              <tbody>
+                {[...plato.detalle].sort((a, b) => b.g - a.g).map((d, i) => {
+                  const ing = d.ingredient_id ? mapaIngredientes.get(d.ingredient_id) : undefined
+                  return (
+                    <tr key={i}>
+                      <td>{d.nombre}</td>
+                      <td className="derecha">{fmt(d.g)} g</td>
+                      <td className="derecha">
+                        {ing ? (
+                          <select
+                            value={ing.grupo_plato ?? ''}
+                            onChange={(e) => {
+                              setErrorGrupo(null)
+                              guardarGrupoPlato(ing.id, (e.target.value || null) as GrupoPlato | null).catch((x) => setErrorGrupo(x.message))
+                            }}
+                            aria-label={`Grupo de ${ing.nombre}`}
+                          >
+                            <option value="">Auto: {GRUPOS_PLATO.find((x) => x.valor === grupoInferido(ing))!.corta}</option>
+                            {GRUPOS_PLATO.map((x) => (
+                              <option key={x.valor} value={x.valor}>{x.emoji} {x.corta}</option>
+                            ))}
+                          </select>
+                        ) : null}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+            <p className="suave pequeno">El cambio vale para todas las recetas que llevan ese ingrediente. Arroz, pasta y legumbres secas cuentan ya cocidos (pesan unas 2,5 veces más).</p>
+            {errorGrupo && <p className="error">{errorGrupo}</p>}
+          </details>
+        )}
       </section>
 
       <section>
