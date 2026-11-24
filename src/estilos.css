@@ -75,6 +75,7 @@ label.check input { width: auto; }
 .fila { display: flex; gap: .5rem; align-items: center; }
 .fila.espacio { justify-content: space-between; }
 .fila.centro { justify-content: center; flex-wrap: wrap; }
+.fila.fin { justify-content: flex-end; }
 .fila.acciones { margin: 1.5rem 0; }
 .rejilla-2 { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem; }
 .rejilla-3 { display: grid; grid-template-columns: 1fr; gap: .6rem; }

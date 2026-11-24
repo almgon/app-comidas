@@ -4,7 +4,8 @@ import { normalizar, UNIDADES_DISPONIBLES, type RecetaImportada } from '../../sh
 import { useDatos } from '../lib/datos'
 import { mejorSugerencia, sugerencias } from '../lib/emparejar'
 import { subirFoto } from '../lib/fotos'
-import { UNIDADES_BASE, esUnidadBase, fmt, gramosDe, nutricionPorRacion, pesoReceta } from '../lib/nutricion'
+import { UNIDADES_BASE, esUnidadBase, fmt, gramosDe, nutricionPorRacion, pesoReceta, proteinaSupuesta } from '../lib/nutricion'
+import { PROTEINA_POR_RACION_G, esProteinaPlato } from '../lib/pesos'
 import { useMenu } from '../lib/menu'
 import { useUsarProducto } from '../lib/usarProducto'
 import { euros } from '../lib/precios'
@@ -365,7 +366,7 @@ export default function EditarReceta() {
             <input inputMode="numeric" value={f.t_coccion_min} onChange={(e) => set('t_coccion_min', e.target.value)} />
           </label>
         </div>
-        {total > 0 && <p className={`suave ${total <= 30 ? 'ok' : ''}`}>Total {total} min{total <= 30 ? ' · apta para cena entre semana' : ''}</p>}
+        {total > 0 && <p className="suave">Total {total} min</p>}
       </section>
 
       <section className="tarjeta formulario">
@@ -519,7 +520,12 @@ export default function EditarReceta() {
                     <span className="ok">
                       ✓ {ing.nombre} · {ing.kcal_100 != null ? `${fmt(ing.kcal_100)} kcal · ` : ''}{fmt(ing.proteina_100, 1)} g prot/100 {ing.unidad_base === 'ml' ? 'ml' : 'g'}
                       {ing.kcal_100 == null && ing.proteina_100 == null && <em className="aviso-mini"> · sin datos nutricionales</em>}
-                      {fila.unidad && ['ud', 'lata', 'bote', 'sobre', 'paquete'].includes(fila.unidad) && !ing.peso_unidad_g && <em className="aviso-mini"> · falta el peso por unidad</em>}
+                      {esProteinaPlato(ing) && proteinaSupuesta({ cantidad: numero(fila.cantidad), unidad: fila.unidad || null }, ing, 1) != null ? (
+                        <em className="suave"> · sin peso: se cuentan {PROTEINA_POR_RACION_G} g por ración</em>
+                      ) : (
+                        fila.unidad && ['ud', 'lata', 'bote', 'sobre', 'paquete'].includes(fila.unidad) && !ing.peso_unidad_g && <em className="aviso-mini"> · falta el peso por unidad</em>
+                      )}
+                      {ing.peso_unidad_aprox && (!fila.unidad || fila.unidad === 'ud') && <em className="suave"> · pieza mediana ≈ {fmt(ing.peso_unidad_g)} g</em>}
                       <button type="button" className="enlace" onClick={() => setEditandoIng(editandoIng === fila.key ? null : fila.key)}>datos</button>
                       <button type="button" className="enlace" onClick={() => setFila(fila.key, { ingredient_id: null })}>cambiar</button>
                       <br />

@@ -384,6 +384,19 @@ export function useSemana(lunes: string) {
     [planId, recargar, recargarMenu],
   )
 
+  /** Borra todo el menú de la semana (también lo fijado). Si la sesión del domingo no se ha cerrado, también se reinicia. */
+  const borrarSemana = useCallback(async () => {
+    if (!planId) return
+    const cerrado = !!estado.plan?.batch_cerrado_en
+    setEstado((s) => ({ ...s, entradas: [], plan: s.plan && !cerrado ? { ...s.plan, batch: {} } : s.plan }))
+    try {
+      chk(await supabase.from('plan_entries').delete().eq('plan_id', planId))
+      if (!cerrado) chk(await supabase.from('meal_plans').update({ batch: {} }).eq('id', planId))
+    } finally {
+      await Promise.all([recargar(), recargarMenu()])
+    }
+  }, [planId, estado.plan, recargar, recargarMenu])
+
   const guardarBatch = useCallback(
     async (batch: Record<string, EstadoBatch>, cerrado?: string | null) => {
       if (!planId) return
@@ -461,6 +474,26 @@ export function useSemana(lunes: string) {
     },
     [planId, asegurarLista, recargar],
   )
+
+  /** Vacía la lista entera (también lo añadido a mano); se puede volver a crear desde el menú */
+  const vaciarLista = useCallback(async () => {
+    const lid = estado.lista?.id
+    if (!lid) return
+    const ids = new Set(estado.articulos.map((a) => a.id))
+    // lo pendiente de enviar de esta lista ya no sirve
+    const cola = leer<Operacion[]>(COLA) ?? []
+    localStorage.setItem(COLA, JSON.stringify(cola.filter((o) => (o.tipo === 'anadir' ? o.list_id !== lid : !ids.has(o.id)))))
+    const pend = leer<Record<string, Record<string, unknown>>>(PENDIENTES) ?? {}
+    for (const id of ids) delete pend[id]
+    localStorage.setItem(PENDIENTES, JSON.stringify(pend))
+    setEstado((s) => ({ ...s, lista: null, articulos: [] }))
+    try {
+      // al borrar la lista se borran sus artículos (on delete cascade)
+      chk(await supabase.from('shopping_lists').delete().eq('id', lid))
+    } finally {
+      await recargar()
+    }
+  }, [estado.lista, estado.articulos, recargar])
 
   /** Guarda en local un cambio de un artículo (para verlo al instante y no perderlo sin conexión) */
   const cambiarLocal = useCallback(
@@ -557,5 +590,5 @@ export function useSemana(lunes: string) {
     [guardarEntradas],
   )
 
-  return { ...estado, cargando, error, recargar, guardarEntradas, borrarEntrada, guardarBatch, cerrarBatch, generarLista, marcar, marcarTengo, anadirArticulo, borrarArticulo, congelarExtra }
+  return { ...estado, cargando, error, recargar, guardarEntradas, borrarEntrada, borrarSemana, guardarBatch, cerrarBatch, generarLista, vaciarLista, marcar, marcarTengo, anadirArticulo, borrarArticulo, congelarExtra }
 }

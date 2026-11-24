@@ -2,7 +2,7 @@
 import { normalizar } from '../../shared/parser.js'
 import type { ItemBatch } from './batch'
 import { aUnidadBase, cantidadCompra, enEnvases, fmtBase } from './cantidades'
-import { racionesDeBase } from './nutricion'
+import { proteinaSupuesta, racionesDeBase } from './nutricion'
 import { cenaAnterior } from './generador'
 import type { Comensal, EntradaPlan, Envase, Ingrediente, Receta } from './tipos'
 
@@ -80,7 +80,9 @@ export function calcularCompra(d: DatosCompra): Necesidad[] {
         if (l.texto_original.trim()) sumar(null, l.texto_original.trim(), null, origen)
         continue
       }
-      const q = aUnidadBase(l.cantidad, l.unidad, ing)
+      // proteína sin peso: 150 g por ración
+      const sup = proteinaSupuesta(l, ing, r.raciones || 1)
+      const q = sup == null ? aUnidadBase(l.cantidad, l.unidad, ing) : ing.unidad_base === 'ud' ? (ing.peso_unidad_g ? sup / ing.peso_unidad_g : null) : sup
       sumar(ing, ing.nombre, q == null ? null : q * mult, origen)
     }
   }

@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { avisosRecetario, costeDia, esCenaEntreSemana, generarMenu, indicadores, objetivos, ordenDe, otraAnadida, type ContextoMenu } from './generador'
+import { avisosRecetario, costeDia, generarMenu, indicadores, objetivos, ordenDe, otraAnadida, type ContextoMenu } from './generador'
 import { nutricionPorRacion, racionesDeBase, pesoReceta } from './nutricion'
-import { balance, diaPersona } from './objetivos'
 import { sesionDomingo } from './batch'
 import { calcularCompra } from './compra'
 import { enEnvases, aUnidadBase } from './cantidades'
@@ -77,7 +76,6 @@ describe('generador', () => {
       expect(r).toBeDefined()
       const dia = indiceDia(LUNES, e.fecha)
       if (e.momento === 'comida' && dia <= 1) expect(e.origen).toBe('batch')
-      if (esCenaEntreSemana({ dia, momento: e.momento }) && e.origen === 'fresco') expect((r.t_prep_min ?? 0) + (r.t_coccion_min ?? 0)).toBeLessThanOrEqual(30)
       expect(r.tipo_comida === 'ambas' || r.tipo_comida === e.momento).toBe(true)
     }
     const ind = indicadores(entradas, ctx)
@@ -131,7 +129,7 @@ describe('generador', () => {
     expect(entradas.filter((e) => e.recipe_id === null).length).toBeGreaterThan(0)
     expect(avisos.length).toBeGreaterThan(0)
     const rec = avisosRecetario(rs).join(' ')
-    expect(rec).toMatch(/30 minutos/)
+    expect(rec).not.toMatch(/30 min/) // ya no hay reglas de tiempo
     expect(rec).toMatch(/pescado/)
   })
 
@@ -297,42 +295,37 @@ describe('kcal y macros', () => {
     expect(lista.find((x) => x.ingredient_id === 'i-carne')!.cantidad).toBe(250)
   })
 
-  it('estima objetivos por persona y dice qué falta o sobra', () => {
+  it('ya no hay objetivos de kcal: solo la proteína de referencia por peso', () => {
     const [a] = comensalesDe([{ id: 'a', household_id: 'h', nombre: 'Alberto', peso_kg: 70, factor_racion: 1 }])
-    expect(a.kcal).toBe(2240)
     expect(a.protMin).toBe(84)
-    const [b] = comensalesDe([{ id: 'b', household_id: 'h', nombre: 'Pareja', peso_kg: 87, factor_racion: 1.25, kcal_objetivo: 2600 }])
-    expect(b.kcal).toBe(2600)
-    const bal = balance({ kcal: 1700, proteina: 90, hidratos: 400, grasa: 60 }, a)
-    expect(bal.find((x) => x.clave === 'kcal')!.estado).toBe('falta')
-    expect(bal.find((x) => x.clave === 'kcal')!.texto).toMatch(/Faltan 316 kcal/)
-    expect(bal.find((x) => x.clave === 'proteina')!.estado).toBe('ok')
-    expect(bal.find((x) => x.clave === 'hidratos')!.estado).toBe('sobra')
+    expect(a.protMax).toBe(112)
+    expect('kcal' in a).toBe(false)
   })
 
-  it('reparte los alimentos sueltos según el factor de cada uno', () => {
-    const [a, b] = comensales
-    const avena = ing('i-avena', 'Avena', { kcal_100: 370, proteina_100: 13 })
-    const e = [{ momento: 'desayuno' as const, recipe_id: null, origen: 'fresco' as const, extras: [{ ingredient_id: 'i-avena', cantidad: 225 }] }]
-    const ia = diaPersona(e, a, new Map(), new Map([['i-avena', avena]]), 2.25)
-    const ib = diaPersona(e, b, new Map(), new Map([['i-avena', avena]]), 2.25)
-    expect(ia.macros.kcal).toBeCloseTo(370) // 100 g
-    expect(ib.macros.kcal).toBeCloseTo(462.5) // 125 g
-    expect(ia.completo).toBe(false)
+  it('las cenas entre semana pueden ser recetas largas (sin reglas de tiempo)', () => {
+    const rs = variado().map((r) => ({ ...r, t_prep_min: 30, t_coccion_min: 60 }))
+    const { entradas } = generarMenu(ctxCon(rs), [], { rnd: semilla(4) })
+    const cenas = entradas.filter((e) => e.momento === 'cena' && ordenDe(e) === 0 && indiceDia(LUNES, e.fecha) <= 4)
+    expect(cenas.every((e) => e.recipe_id)).toBe(true)
+    expect(cenas.some((e) => e.origen === 'fresco')).toBe(true)
+    expect(avisosRecetario(rs).join(' ')).not.toMatch(/rápida|30 min/)
   })
 
-  it('si faltan kcal añade otra receta al hueco y el día queda más ajustado', () => {
+  it('a los principales les añade guarniciones y el día queda más ajustado', () => {
     const rs = [
-      ...variado(),
+      ...variado().map((r) => ({ ...r, papel: 'principal' as const })),
       receta('Ensalada de garbanzos', 'legumbre', { t_prep_min: 10, t_coccion_min: 0 }),
       receta('Pan', null, { papel: 'guarnicion', t_prep_min: 0, t_coccion_min: 0 }),
       receta('Ensalada verde', null, { papel: 'guarnicion', t_prep_min: 5, t_coccion_min: 0 }),
+      receta('Arroz blanco', null, { papel: 'guarnicion', t_prep_min: 2, t_coccion_min: 15 }),
+      receta('Verduras asadas', null, { papel: 'guarnicion', t_prep_min: 10, t_coccion_min: 30 }),
+      receta('Quinoa', null, { papel: 'guarnicion', t_prep_min: 2, t_coccion_min: 15 }),
+      receta('Patatas al horno', null, { papel: 'guarnicion', t_prep_min: 5, t_coccion_min: 40 }),
+      receta('Ensalada de tomate', null, { papel: 'guarnicion', t_prep_min: 5, t_coccion_min: 0 }),
       receta('Yogur con nueces', null, { tipo_comida: 'desayuno' }),
       receta('Tostadas', null, { tipo_comida: 'desayuno' }),
     ]
     const ctx = ctxCon(rs)
-    // platos ligeros: 350 kcal por ración; así a cada uno le faltan kcal
-    ctx.macros = new Map(rs.map((r) => [r.id, { kcal: 350, proteina: 25, hidratos: 35, grasa: 12 }]))
     ctx.comensales = comensalesDe([
       { id: 'a', household_id: 'h', nombre: 'Alberto', peso_kg: 70, factor_racion: 1 },
       { id: 'b', household_id: 'h', nombre: 'Pareja', peso_kg: 87, factor_racion: 1.25 },
@@ -344,7 +337,7 @@ describe('kcal y macros', () => {
       const delDia = entradas.filter((e) => e.fecha === f)
       const ids = delDia.map((e) => e.recipe_id).filter(Boolean)
       expect(new Set(ids).size).toBe(ids.length) // nada se repite en el mismo día
-      expect(delDia.filter((e) => ordenDe(e) > 0).length).toBeLessThanOrEqual(2)
+      for (const m of ['desayuno', 'comida', 'cena']) expect(delDia.filter((e) => e.momento === m && ordenDe(e) > 0).length).toBeLessThanOrEqual(2)
       const sin = delDia.filter((e) => ordenDe(e) === 0)
       if (delDia.length > sin.length) expect(costeDia(ctx, delDia)).toBeLessThan(costeDia(ctx, sin))
     }

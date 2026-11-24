@@ -5,7 +5,6 @@ import { useComensales, useSemana } from '../lib/menu'
 import { useContextoMenu } from '../lib/contexto'
 import { useSemanaElegida } from '../lib/useSemanaElegida'
 import { MOMENTOS_DIA, avisosMenu, avisosRecetario, comidaConSobras, generarMenu, indicadores, objetivos, ordenDe, otraAnadida, problemasEntrada } from '../lib/generador'
-import { balance, diaPersona, type Balance, type DiaPersona } from '../lib/objetivos'
 import { DIAS, fechaCorta, fechasSemana } from '../lib/semana'
 import { fmt } from '../lib/nutricion'
 import { ORIGENES, etiquetaGrupo, papelDe, racionesHogar, type Comensal, type EntradaPlan, type Momento } from '../lib/tipos'
@@ -19,13 +18,9 @@ import { EstadoRaciones } from '../components/Raciones'
 const NOMBRE_MOMENTO: Record<Momento, string> = { desayuno: 'Desayuno', comida: 'Comida', cena: 'Cena' }
 const clave = (e: Pick<EntradaPlan, 'fecha' | 'momento' | 'orden'>) => `${e.fecha}|${e.momento}|${ordenDe(e)}`
 
-type Semaforo = 'verde' | 'ambar' | 'rojo'
-/** Color del día: verde si kcal y macros están en rango, ámbar si algo se sale un poco, rojo si las kcal se van más de un 20 % */
-function colorDia(b: Balance[]): Semaforo {
-  const k = b.find((x) => x.clave === 'kcal')!
-  if (k.estado !== 'ok' && Math.abs(k.valor - (k.min + k.max) / 2) > ((k.min + k.max) / 2) * 0.2) return 'rojo'
-  return b.every((x) => x.estado === 'ok') ? 'verde' : 'ambar'
-}
+/** Desayuno, comida y cena tienen algo y nadie come fuera */
+const diaCompleto = (delDia: EntradaPlan[]) =>
+  !delDia.some((e) => e.origen === 'libre') && new Set(delDia.filter((e) => e.recipe_id || e.extras?.length).map((e) => e.momento)).size === 3
 
 export default function Menu() {
   const [lunes, setLunes] = useSemanaElegida()
@@ -52,18 +47,8 @@ export default function Menu() {
     return a
   }, [recetas, semana.entradas, ctx, fechas, porClave])
 
-  // Kcal y macros de cada persona, cada día
   const factorHogar = racionesHogar(comensales)
-  const nutDias = useMemo(
-    () => fechas.map((f) => new Map(comensales.map((c) => [c.id, diaPersona(semana.entradas.filter((e) => e.fecha === f), c, ctx.macros ?? new Map(), mapaIngredientes, factorHogar)]))),
-    [fechas, comensales, semana.entradas, ctx.macros, mapaIngredientes, factorHogar],
-  )
-  const media = (c: Comensal) => {
-    const dias = nutDias.map((m) => m.get(c.id)!).filter((d) => d.completo)
-    if (!dias.length) return null
-    const s = (k: 'kcal' | 'proteina') => dias.reduce((t, d) => t + d.macros[k], 0) / dias.length
-    return { kcal: s('kcal'), proteina: s('proteina'), dias: dias.length }
-  }
+  const completos = useMemo(() => fechas.map((f) => diaCompleto(semana.entradas.filter((e) => e.fecha === f))), [fechas, semana.entradas])
   // Método del plato de cada desayuno, comida y cena (todas sus recetas y alimentos sueltos juntos)
   const platoHueco = (fecha: string, momento: Momento) => {
     const lista = delHueco(fecha, momento)
@@ -76,13 +61,12 @@ export default function Menu() {
     [fechas, comensales, semana.entradas, ctx.porciones, mapaIngredientes, factorHogar],
   )
   const resumenRaciones = (c: Comensal) => {
-    const dias = nutDias.map((m, d) => ({ completo: m.get(c.id)!.completo, p: porcDias[d].get(c.id)! })).filter((x) => x.completo)
+    const dias = completos.map((completo, d) => ({ completo, p: porcDias[d].get(c.id)! })).filter((x) => x.completo)
     if (!dias.length) return null
     const bien = (g: 'verdura' | 'hidratos' | 'lacteos') => dias.filter((x) => evaluarDia(x.p).find((e) => e.grupo === g)!.estado === 'verde').length
     const frutos = evaluarFrutosSecos(dias.reduce((t, x) => t + x.p.frutos_secos, 0), dias.length)
     return { dias: dias.length, verdura: bien('verdura'), hidratos: bien('hidratos'), lacteos: bien('lacteos'), frutos }
   }
-  const sinDatos = useMemo(() => new Set(semana.entradas.filter((e) => e.recipe_id && !ctx.macros?.get(e.recipe_id)).map((e) => e.recipe_id)).size, [semana.entradas, ctx.macros])
 
   // Bases que se reutilizan en varios platos de la semana
   const basesCompartidas = useMemo(() => {
@@ -132,6 +116,21 @@ export default function Menu() {
     }
   }
 
+  async function borrarSemana() {
+    const n = semana.entradas.filter((e) => e.recipe_id || e.origen === 'libre' || e.extras?.length).length
+    if (!n) return
+    if (!confirm(`Se borrará todo el menú de esta semana (${n} platos, también los fijados 📌). La lista de la compra no se toca. ¿Seguir?`)) return
+    setGenerando(true)
+    setError(null)
+    try {
+      await semana.borrarSemana()
+    } catch (e: any) {
+      setError(e.message)
+    } finally {
+      setGenerando(false)
+    }
+  }
+
   const cambiar = (e: EntradaPlan) => semana.guardarEntradas([e]).catch((x) => setError(x.message))
   const quitar = (e: EntradaPlan) => semana.guardarEntradas([], [e]).catch((x) => setError(x.message))
 
@@ -145,6 +144,11 @@ export default function Menu() {
       </header>
       <SelectorSemana lunes={lunes} onCambiar={setLunes} />
       <EnlacesSemana lunes={lunes} actual="menu" />
+      {semana.entradas.length > 0 && (
+        <div className="fila fin">
+          <button className="enlace peligro" onClick={borrarSemana} disabled={generando}>🗑 Borrar la semana</button>
+        </div>
+      )}
       {semana.error && <p className="aviso">{semana.error}</p>}
       {error && <p className="error">{error}</p>}
 
@@ -163,21 +167,6 @@ export default function Menu() {
         </div>
         <div className="semaforos">
           {comensales.map((c) => {
-            const m = media(c)
-            const b = m ? balance({ kcal: m.kcal, proteina: m.proteina, hidratos: 0, grasa: 0 }, c) : null
-            const ek = b?.find((x) => x.clave === 'kcal')!.estado
-            const ep = b?.find((x) => x.clave === 'proteina')!.estado
-            return (
-              <div key={c.id} className={`semaforo ${!m ? '' : ek === 'ok' && ep === 'ok' ? 'verde' : 'ambar'}`}>
-                <span>🔥 {c.nombre} <small>(media de {m?.dias ?? 0} días completos)</small></span>
-                <b>{m ? `${fmt(m.kcal)} kcal · ${fmt(m.proteina)} g prot.` : '–'}</b>
-                <small>Objetivo {fmt(c.kcal)} kcal · {c.protMin}-{c.protMax} g prot.</small>
-              </div>
-            )
-          })}
-        </div>
-        <div className="semaforos">
-          {comensales.map((c) => {
             const r = resumenRaciones(c)
             if (!r) return null
             const estado = r.verdura === r.dias && r.hidratos === r.dias ? 'verde' : r.verdura >= r.dias - 2 && r.hidratos >= r.dias - 2 ? 'ambar' : 'rojo'
@@ -190,7 +179,6 @@ export default function Menu() {
             )
           })}
         </div>
-        {sinDatos > 0 && <p className="suave">{sinDatos} receta{sinDatos === 1 ? '' : 's'} del menú sin kcal (faltan ingredientes vinculados o sus datos): los totales se quedan cortos.</p>}
       </section>
 
       {avisos.length > 0 && (
@@ -220,26 +208,13 @@ export default function Menu() {
               <h2>
                 {DIAS[dia]} <span className="suave">{fechaCorta(fecha)}</span>
               </h2>
-              <button className="prot-dia sin-boton" onClick={() => setDetalleDia(detalleDia === fecha ? null : fecha)} title="Ver kcal y macros del día">
-                {comensales.map((c) => {
-                  const d = nutDias[dia].get(c.id)!
-                  const col = d.completo ? colorDia(balance(d.macros, c)) : ''
-                  return (
-                    <span key={c.id} className={`punto ${col}`}>
-                      {c.nombre.slice(0, 1).toUpperCase()} {fmt(d.macros.kcal)} kcal
-                    </span>
-                  )
-                })}
-              </button>
             </div>
-            {comensales[0] && nutDias[dia].get(comensales[0].id)!.completo && (
+            {comensales[0] && completos[dia] && (
               <button className="sin-boton raciones-dia" onClick={() => setDetalleDia(detalleDia === fecha ? null : fecha)} title="Raciones del día (por persona)">
                 <EstadoRaciones p={porcDias[dia].get(comensales[0].id)!} compacto />
               </button>
             )}
-            {(detalleDia === fecha || comensales.some((c) => nutDias[dia].get(c.id)!.completo && colorDia(balance(nutDias[dia].get(c.id)!.macros, c)) !== 'verde')) && (
-              <ResumenDia comensales={comensales} dias={nutDias[dia]} porciones={porcDias[dia]} detalle={detalleDia === fecha} />
-            )}
+            {detalleDia === fecha && completos[dia] && <ResumenDia comensales={comensales} porciones={porcDias[dia]} />}
             {MOMENTOS_DIA.map((momento) => {
               const lista = delHueco(fecha, momento)
               const principal = lista.find((e) => ordenDe(e) === 0)
@@ -383,41 +358,16 @@ function Plato({
   )
 }
 
-/** Lo que falta o sobra a cada uno ese día */
-function ResumenDia({ comensales, dias, porciones, detalle }: { comensales: Comensal[]; dias: Map<string, DiaPersona>; porciones: Map<string, Porciones>; detalle: boolean }) {
+/** Raciones de cada grupo de cada uno ese día */
+function ResumenDia({ comensales, porciones }: { comensales: Comensal[]; porciones: Map<string, Porciones> }) {
   return (
     <div className="resumen-dia">
-      {comensales.map((c) => {
-        const d = dias.get(c.id)!
-        const b = balance(d.macros, c)
-        const mal = b.filter((x) => x.estado !== 'ok')
-        if (!detalle && (!d.completo || !mal.length)) return null
-        return (
-          <div key={c.id} className="resumen-persona">
-            <b>{c.nombre}</b>{' '}
-            {detalle ? (
-              <span className="suave">
-                {fmt(d.macros.kcal)} / {fmt(c.kcal)} kcal · P {fmt(d.macros.proteina)} g ({c.protMin}-{c.protMax}) · HC {fmt(d.macros.hidratos)} g ({c.hcMin}-{c.hcMax}) · G {fmt(d.macros.grasa)} g ({c.grasaMin}-{c.grasaMax})
-              </span>
-            ) : null}
-            {d.completo ? (
-              mal.length ? (
-                <span className="chips">
-                  {mal.map((x) => (
-                    <span key={x.clave} className={`chip ${x.estado === 'falta' ? 'falta' : 'sobra'}`}>{x.estado === 'falta' ? '⬇️' : '⬆️'} {x.texto}</span>
-                  ))}
-                </span>
-              ) : (
-                <span className="chip ok">✓ Día ajustado</span>
-              )
-            ) : (
-              <span className="suave"> · día sin completar: falta algún hueco o coméis fuera</span>
-            )}
-            {d.sinDatos > 0 && <span className="suave"> · {d.sinDatos} receta{d.sinDatos === 1 ? '' : 's'} sin kcal</span>}
-            {detalle && d.completo && <div><EstadoRaciones p={porciones.get(c.id)!} /></div>}
-          </div>
-        )
-      })}
+      {comensales.map((c) => (
+        <div key={c.id} className="resumen-persona">
+          <b>{c.nombre}</b>
+          <div><EstadoRaciones p={porciones.get(c.id)!} /></div>
+        </div>
+      ))}
     </div>
   )
 }

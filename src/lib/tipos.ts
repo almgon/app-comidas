@@ -48,7 +48,7 @@ export interface Perfil {
   nombre: string
   peso_kg: number | null
   factor_racion: number
-  /** objetivo de kcal al día puesto a mano (si no, se estima con el peso) */
+  /** columna antigua (objetivo de kcal): ya no se usa */
   kcal_objetivo?: number | null
 }
 
@@ -59,6 +59,8 @@ export interface Ingrediente {
   categoria: string
   unidad_base: 'g' | 'ml' | 'ud'
   peso_unidad_g: number | null
+  /** el peso por unidad no es del ingrediente: es el de una pieza mediana (verdura y fruta) */
+  peso_unidad_aprox?: boolean
   kcal_100: number | null
   proteina_100: number | null
   hidratos_100: number | null
@@ -117,11 +119,6 @@ export type RecetaBorrador = Omit<Receta, 'id' | 'household_id' | 'creado_en' | 
 export const tiempoTotal = (r: Pick<Receta, 't_prep_min' | 't_coccion_min'>) =>
   (r.t_prep_min ?? 0) + (r.t_coccion_min ?? 0) || null
 
-/** Apta para cena entre semana: tiempo total ≤ 30 min */
-export const aptaCenaRapida = (r: Pick<Receta, 't_prep_min' | 't_coccion_min'>) => {
-  const t = tiempoTotal(r)
-  return t != null && t <= 30
-}
 
 // =========================================================
 // Fase 2: menú, desayunos, congelador y compra
@@ -225,47 +222,23 @@ export interface ListaCompra {
   umbral_ahorro: number
 }
 
-/** Miembro del hogar con sus objetivos diarios */
+/** Miembro del hogar: su factor de ración y la proteína de referencia (1,2-1,6 g por kg) */
 export interface Comensal {
   id: string
   nombre: string
   factor: number
   protMin: number
   protMax: number
-  /** kcal al día */
-  kcal?: number
-  /** hidratos (g/día): 45-60 % de las kcal */
-  hcMin?: number
-  hcMax?: number
-  /** grasa (g/día): 20-35 % de las kcal */
-  grasaMin?: number
-  grasaMax?: number
 }
 
-/**
- * Kcal por kg de peso para un adulto que entrena 3-4 días a la semana (estimación sin altura, edad ni sexo).
- * Cada persona puede poner su propio objetivo en Ajustes.
- */
-export const KCAL_POR_KG = 32
-
-export function objetivosPersona(peso: number, kcalManual?: number | null) {
-  const kcal = kcalManual && kcalManual > 0 ? Math.round(kcalManual) : Math.round((peso * KCAL_POR_KG) / 10) * 10
-  return {
-    kcal,
-    protMin: Math.round(peso * 1.2),
-    protMax: Math.round(peso * 1.6),
-    // Rangos de referencia (EFSA/AESAN): hidratos 45-60 % y grasa 20-35 % de la energía
-    hcMin: Math.round((kcal * 0.45) / 4),
-    hcMax: Math.round((kcal * 0.6) / 4),
-    grasaMin: Math.round((kcal * 0.2) / 9),
-    grasaMax: Math.round((kcal * 0.35) / 9),
-  }
+export function objetivosPersona(peso: number) {
+  return { protMin: Math.round(peso * 1.2), protMax: Math.round(peso * 1.6) }
 }
 
 export function comensalesDe(miembros: Perfil[]): Comensal[] {
   return miembros.map((m) => {
     const peso = m.peso_kg ? Number(m.peso_kg) : 70 * (Number(m.factor_racion) || 1)
-    return { id: m.id, nombre: m.nombre, factor: Number(m.factor_racion) || 1, ...objetivosPersona(peso, m.kcal_objetivo == null ? null : Number(m.kcal_objetivo)) }
+    return { id: m.id, nombre: m.nombre, factor: Number(m.factor_racion) || 1, ...objetivosPersona(peso) }
   })
 }
 
